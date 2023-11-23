@@ -21,7 +21,6 @@ import net.minestom.server.recipe.RecipeManager;
 import net.minestom.server.scoreboard.TeamManager;
 import net.minestom.server.thread.TickSchedulerThread;
 import net.minestom.server.timer.SchedulerManager;
-import net.minestom.server.utils.MathUtils;
 import net.minestom.server.utils.PacketUtils;
 import net.minestom.server.utils.validate.Check;
 import net.minestom.server.world.Difficulty;
@@ -59,12 +58,13 @@ public final class MinecraftServer {
     // Can be modified at performance cost when increased
     @Deprecated
     public static final int TICK_PER_SECOND = ServerFlag.SERVER_TICKS_PER_SECOND;
-    public static final int TICK_MS = 1000 / TICK_PER_SECOND;
+    public static final int TICK_MS = 1000 / ServerFlag.SERVER_TICKS_PER_SECOND;
 
     // In-Game Manager
     private static volatile ServerProcess serverProcess;
 
     private static int compressionThreshold = 256;
+    private static boolean terminalEnabled = System.getProperty("minestom.terminal.disabled") == null;
     private static String brandName = "Minestom";
     private static Difficulty difficulty = Difficulty.NORMAL;
 
@@ -240,6 +240,25 @@ public final class MinecraftServer {
     public static void setCompressionThreshold(int compressionThreshold) {
         Check.stateCondition(serverProcess.isAlive(), "The compression threshold cannot be changed after the server has been started.");
         MinecraftServer.compressionThreshold = compressionThreshold;
+    }
+
+    /**
+     * Gets if the built in Minestom terminal is enabled.
+     *
+     * @return true if the terminal is enabled
+     */
+    public static boolean isTerminalEnabled() {
+        return terminalEnabled;
+    }
+
+    /**
+     * Enabled/disables the built in Minestom terminal.
+     *
+     * @param enabled true to enable, false to disable
+     */
+    public static void setTerminalEnabled(boolean enabled) {
+        Check.stateCondition(serverProcess.isAlive(), "Terminal settings may not be changed after starting the server.");
+        MinecraftServer.terminalEnabled = enabled;
     }
 
     public static DimensionTypeManager getDimensionTypeManager() {

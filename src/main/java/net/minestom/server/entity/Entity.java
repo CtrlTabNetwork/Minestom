@@ -5,10 +5,7 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.HoverEvent;
 import net.kyori.adventure.text.event.HoverEvent.ShowEntity;
 import net.kyori.adventure.text.event.HoverEventSource;
-import net.minestom.server.MinecraftServer;
-import net.minestom.server.ServerProcess;
-import net.minestom.server.Tickable;
-import net.minestom.server.Viewable;
+import net.minestom.server.*;
 import net.minestom.server.collision.*;
 import net.minestom.server.coordinate.Point;
 import net.minestom.server.coordinate.Pos;
@@ -562,7 +559,7 @@ public class Entity implements Viewable, Tickable, Schedulable, Snapshotable, Ev
         if (!hasVelocity && noGravity) {
             return;
         }
-        final float tps = MinecraftServer.TICK_PER_SECOND;
+        final float tps = ServerFlag.SERVER_TICKS_PER_SECOND;
         final Pos positionBeforeMove = getPosition();
         final Vec currentVelocity = getVelocity();
         final boolean wasOnGround = this.onGround;
@@ -661,7 +658,7 @@ public class Entity implements Viewable, Tickable, Schedulable, Snapshotable, Ev
                         z * drag
                 ))
                 // Convert from block/tick to block/sec
-                .mul(MinecraftServer.TICK_PER_SECOND)
+                .mul(ServerFlag.SERVER_TICKS_PER_SECOND)
                 // Prevent infinitely decreasing velocity
                 .apply(Vec.Operator.EPSILON);
     }
@@ -1535,7 +1532,7 @@ public class Entity implements Viewable, Tickable, Schedulable, Snapshotable, Ev
     }
 
     protected @NotNull Vec getVelocityForPacket() {
-        return this.velocity.mul(8000f / MinecraftServer.TICK_PER_SECOND);
+        return this.velocity.mul(8000f / ServerFlag.SERVER_TICKS_PER_SECOND);
     }
 
     protected @NotNull EntityVelocityPacket getVelocityPacket() {
@@ -1642,9 +1639,9 @@ public class Entity implements Viewable, Tickable, Schedulable, Snapshotable, Ev
     public void takeKnockback(float strength, final double x, final double z) {
         if (strength > 0) {
             //TODO check possible side effects of unnatural TPS (other than 20TPS)
-            strength *= MinecraftServer.TICK_PER_SECOND;
+            strength *= ServerFlag.SERVER_TICKS_PER_SECOND;
             final Vec velocityModifier = new Vec(x, z).normalize().mul(strength);
-            final double verticalLimit = .4d * MinecraftServer.TICK_PER_SECOND;
+            final double verticalLimit = .4d * ServerFlag.SERVER_TICKS_PER_SECOND;
 
             setVelocity(new Vec(velocity.x() / 2d - velocityModifier.x(),
                     onGround ? Math.min(verticalLimit, velocity.y() / 2d + strength) : velocity.y(),
