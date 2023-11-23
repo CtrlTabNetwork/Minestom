@@ -1,5 +1,6 @@
 plugins {
     `java-library`
+	id("org.hibernate.build.maven-repo-auth") version "3.0.3"
     alias(libs.plugins.blossom)
 
     `maven-publish`
@@ -80,6 +81,11 @@ dependencies {
     testImplementation(project(":testing"))
 }
 
+java {
+    withJavadocJar()
+    withSourcesJar()
+}
+
 tasks {
     withType<Javadoc> {
         (options as? StandardJavadocDocletOptions)?.apply {
@@ -108,7 +114,7 @@ tasks {
         replaceToken("\"&ARTIFACT\"", if (artifact == null) "null" else "\"${artifact}\"", gitFile)
     }
 
-    nexusPublishing{
+    nexusPublishing {
         useStaging.set(true)
         this.packageGroup.set("net.minestom")
 
@@ -119,6 +125,15 @@ tasks {
             if (System.getenv("SONATYPE_USERNAME") != null) {
                 username.set(System.getenv("SONATYPE_USERNAME"))
                 password.set(System.getenv("SONATYPE_PASSWORD"))
+            }
+        }
+    }
+
+    publishing {
+        repositories {
+            maven {
+                name = "tecno-repo"
+                url = uri("https://repo.mrtecno.dev/repository/personal-hosted/")
             }
         }
     }
