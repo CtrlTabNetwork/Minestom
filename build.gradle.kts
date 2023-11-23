@@ -8,13 +8,13 @@ plugins {
     alias(libs.plugins.nexuspublish)
 }
 
-version = System.getenv("SHORT_COMMIT_HASH") ?: "dev"
+version = "1.0-SNAPSHOT"
 
 allprojects {
     apply(plugin = "java")
 
     group = "net.minestom"
-    version = rootProject.version
+    version = System.getenv("SHORT_COMMIT_HASH") ?: version
     description = "Lightweight and multi-threaded Minecraft server implementation"
 
     repositories {
@@ -100,6 +100,10 @@ tasks {
         }
     }
 
+    withType<JavaCompile> {
+        options.encoding = "UTF-8"
+    }
+
     blossom {
         val gitFile = "src/main/java/net/minestom/server/Git.java"
 
@@ -139,8 +143,8 @@ tasks {
     }
 
     publishing.publications.create<MavenPublication>("maven") {
-        groupId = "net.minestom"
-        artifactId = "minestom-snapshots"
+        groupId = project.group.toString()
+        artifactId = project.name
         version = project.version.toString()
 
         from(project.components["java"])
