@@ -8,7 +8,9 @@ import org.jetbrains.annotations.NotNull;
 import java.util.List;
 import java.util.UUID;
 
-public record PlayerInfoRemovePacket(@NotNull List<@NotNull UUID> uuids) implements ServerPacket {
+public record PlayerInfoRemovePacket(@NotNull List<@NotNull UUID> uuids) implements ServerPacket.Play {
+    public static final int MAX_ENTRIES = 1024;
+
     public PlayerInfoRemovePacket(@NotNull UUID uuid) {
         this(List.of(uuid));
     }
@@ -18,7 +20,7 @@ public record PlayerInfoRemovePacket(@NotNull List<@NotNull UUID> uuids) impleme
     }
 
     public PlayerInfoRemovePacket(@NotNull NetworkBuffer reader) {
-        this(reader.readCollection(NetworkBuffer.UUID));
+        this(reader.readCollection(NetworkBuffer.UUID, MAX_ENTRIES));
     }
 
     @Override
@@ -27,7 +29,7 @@ public record PlayerInfoRemovePacket(@NotNull List<@NotNull UUID> uuids) impleme
     }
 
     @Override
-    public int getId() {
+    public int playId() {
         return ServerPacketIdentifier.PLAYER_INFO_REMOVE;
     }
 }

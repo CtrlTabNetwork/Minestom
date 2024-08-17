@@ -2,14 +2,16 @@ package net.minestom.server.entity.metadata.other;
 
 import net.minestom.server.entity.Entity;
 import net.minestom.server.entity.Metadata;
+import net.minestom.server.entity.MetadataHolder;
 import net.minestom.server.entity.metadata.EntityMeta;
+import net.minestom.server.particle.Particle;
 import org.jetbrains.annotations.NotNull;
 
 public class AreaEffectCloudMeta extends EntityMeta {
     public static final byte OFFSET = EntityMeta.MAX_OFFSET;
     public static final byte MAX_OFFSET = OFFSET + 4;
 
-    public AreaEffectCloudMeta(@NotNull Entity entity, @NotNull Metadata metadata) {
+    public AreaEffectCloudMeta(@NotNull Entity entity, @NotNull MetadataHolder metadata) {
         super(entity, metadata);
     }
 
@@ -37,12 +39,12 @@ public class AreaEffectCloudMeta extends EntityMeta {
         super.metadata.setIndex(OFFSET + 2, Metadata.Boolean(value));
     }
 
-//    public ParticleWrapper getParticle() {
-//        return super.metadata.getIndex((byte) 10, new ParticleWrapper(Particle.EFFECT, null));
-//    }
-//
-//    public void setParticle(ParticleWrapper value) {
-//        super.metadata.setIndex((byte) 11, Metadata.Particle(value));
-//    }
+    public @NotNull Particle getParticle() {
+        return super.metadata.getIndex(OFFSET + 3, Particle.DUST);
+    }
+
+    public void setParticle(@NotNull Particle value) {
+        super.metadata.setIndex(OFFSET + 3, Metadata.Particle(value));
+    }
 
 }

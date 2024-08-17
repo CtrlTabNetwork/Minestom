@@ -1,6 +1,9 @@
 package net.minestom.server.entity;
 
 import net.minestom.server.coordinate.Vec;
+import net.minestom.server.thread.Acquirable;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.Comparator;
 
@@ -99,10 +102,17 @@ public class ExperienceOrb extends Entity {
         Player closest = entity.getInstance()
                 .getPlayers()
                 .stream()
-                .min(Comparator.comparingDouble(a -> a.getDistance(entity)))
+                .min(Comparator.comparingDouble(a -> a.getDistanceSquared(entity)))
                 .orElse(null);
         if (closest == null) return null;
-        if (closest.getDistance(entity) > maxDistance) return null;
+        if (closest.getDistanceSquared(entity) > maxDistance * maxDistance) return null;
         return closest;
+    }
+
+    @ApiStatus.Experimental
+    @SuppressWarnings("unchecked")
+    @Override
+    public @NotNull Acquirable<? extends ExperienceOrb> acquirable() {
+        return (Acquirable<? extends ExperienceOrb>) super.acquirable();
     }
 }

@@ -1,11 +1,11 @@
 plugins {
-    id("io.github.reyerizo.gradle.jcstress") version "0.8.13"
-    id("minestom.common-conventions")
+    id("io.github.reyerizo.gradle.jcstress") version "0.8.15"
 }
 
 dependencies {
     jcstressImplementation(rootProject)
     jcstress(libs.jcstress.core)
+    jcstress(libs.hephaistos)
 }
 
 jcstress {

@@ -10,7 +10,6 @@ import org.jetbrains.annotations.Nullable;
 import java.util.List;
 
 @ApiStatus.Internal
-@ApiStatus.Experimental
 public interface CommandParser {
     static @NotNull CommandParser parser() {
         return CommandParserImpl.PARSER;
@@ -24,7 +23,7 @@ public interface CommandParser {
      * @return the parsed command which can be executed and cached
      */
     @Contract("_, _ -> new")
-    @NotNull Result parse(@NotNull Graph graph, @NotNull String input);
+    @NotNull Result parse(@NotNull CommandSender sender, @NotNull Graph graph, @NotNull String input);
 
     sealed interface Result {
         @NotNull ExecutableCommand executable();

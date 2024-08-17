@@ -1,5 +1,6 @@
 package net.minestom.server.event.player;
 
+import net.minestom.server.coordinate.BlockVec;
 import net.minestom.server.coordinate.Point;
 import net.minestom.server.entity.Player;
 import net.minestom.server.event.trait.BlockEvent;
@@ -18,7 +19,8 @@ public class PlayerBlockInteractEvent implements PlayerInstanceEvent, BlockEvent
     private final Player player;
     private final Player.Hand hand;
     private final Block block;
-    private final Point blockPosition;
+    private final BlockVec blockPosition;
+    private final Point cursorPosition;
     private final BlockFace blockFace;
 
     /**
@@ -30,12 +32,13 @@ public class PlayerBlockInteractEvent implements PlayerInstanceEvent, BlockEvent
     private boolean cancelled;
 
     public PlayerBlockInteractEvent(@NotNull Player player, @NotNull Player.Hand hand,
-                                    @NotNull Block block, @NotNull Point blockPosition, @NotNull Point cursorPosition,
+                                    @NotNull Block block, @NotNull BlockVec blockPosition, @NotNull Point cursorPosition,
                                     @NotNull BlockFace blockFace) {
         this.player = player;
         this.hand = hand;
         this.block = block;
         this.blockPosition = blockPosition;
+        this.cursorPosition = cursorPosition;
         this.blockFace = blockFace;
     }
 
@@ -49,9 +52,9 @@ public class PlayerBlockInteractEvent implements PlayerInstanceEvent, BlockEvent
     }
 
     /**
-     * Sets if the event should block the item use.
-     *
-     * @param blocks true if the item use should be blocked, false otherwise
+     * Sets the blocking item use state of this event
+     * Note: If this is true, then no {@link PlayerUseItemOnBlockEvent} will be fired.
+     * @param blocks - true to block item interactions, false to not block
      */
     public void setBlockingItemUse(boolean blocks) {
         this.blocksItemUse = blocks;
@@ -67,9 +70,16 @@ public class PlayerBlockInteractEvent implements PlayerInstanceEvent, BlockEvent
      *
      * @return the block position
      */
-    public @NotNull Point getBlockPosition() {
+    @Override
+    public @NotNull BlockVec getBlockPosition() {
         return blockPosition;
     }
+
+    /**
+     * Gets the cursor position of the interacted block
+     * @return the cursor position of the interaction
+     */
+    public @NotNull Point getCursorPosition() { return cursorPosition; }
 
     /**
      * Gets the hand used for the interaction.

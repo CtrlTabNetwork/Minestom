@@ -11,7 +11,7 @@ import static net.minestom.server.network.NetworkBuffer.SHORT;
 import static net.minestom.server.network.NetworkBuffer.VAR_INT;
 
 public record EntityVelocityPacket(int entityId, short velocityX, short velocityY,
-                                   short velocityZ) implements ServerPacket {
+                                   short velocityZ) implements ServerPacket.Play {
     public EntityVelocityPacket(@NotNull NetworkBuffer reader) {
         this(reader.read(VAR_INT), reader.read(SHORT), reader.read(SHORT), reader.read(SHORT));
     }
@@ -34,7 +34,7 @@ public record EntityVelocityPacket(int entityId, short velocityX, short velocity
     }
 
     @Override
-    public int getId() {
+    public int playId() {
         return ServerPacketIdentifier.ENTITY_VELOCITY;
     }
 }

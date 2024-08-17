@@ -1,32 +1,37 @@
 package net.minestom.server.instance;
 
-import com.extollit.gaming.ai.path.model.ColumnarOcclusionFieldList;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
+import net.kyori.adventure.nbt.CompoundBinaryTag;
+import net.kyori.adventure.nbt.LongArrayBinaryTag;
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.coordinate.Point;
+import net.minestom.server.coordinate.Vec;
 import net.minestom.server.entity.Entity;
-import net.minestom.server.entity.Player;
-import net.minestom.server.entity.pathfinding.PFBlock;
 import net.minestom.server.instance.block.Block;
 import net.minestom.server.instance.block.BlockHandler;
+import net.minestom.server.instance.heightmap.Heightmap;
+import net.minestom.server.instance.heightmap.MotionBlockingHeightmap;
+import net.minestom.server.instance.heightmap.WorldSurfaceHeightmap;
 import net.minestom.server.network.NetworkBuffer;
 import net.minestom.server.network.packet.server.CachedPacket;
+import net.minestom.server.network.packet.server.SendablePacket;
 import net.minestom.server.network.packet.server.play.ChunkDataPacket;
 import net.minestom.server.network.packet.server.play.UpdateLightPacket;
 import net.minestom.server.network.packet.server.play.data.ChunkData;
 import net.minestom.server.network.packet.server.play.data.LightData;
+import net.minestom.server.registry.DynamicRegistry;
 import net.minestom.server.snapshot.ChunkSnapshot;
 import net.minestom.server.snapshot.SnapshotImpl;
 import net.minestom.server.snapshot.SnapshotUpdater;
 import net.minestom.server.utils.ArrayUtils;
-import net.minestom.server.utils.MathUtils;
-import net.minestom.server.utils.ObjectPool;
 import net.minestom.server.utils.chunk.ChunkUtils;
-import net.minestom.server.world.biomes.Biome;
+import net.minestom.server.utils.validate.Check;
+import net.minestom.server.world.DimensionType;
+import net.minestom.server.world.biome.Biome;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.jglrxavpok.hephaistos.nbt.NBT;
-import org.jglrxavpok.hephaistos.nbt.NBTCompound;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.*;
 
@@ -38,8 +43,14 @@ import static net.minestom.server.utils.chunk.ChunkUtils.toSectionRelativeCoordi
  * WARNING: not thread-safe.
  */
 public class DynamicChunk extends Chunk {
+    private static final Logger LOGGER = LoggerFactory.getLogger(DynamicChunk.class);
 
-    private List<Section> sections;
+    protected List<Section> sections;
+
+    private boolean needsCompleteHeightmapRefresh = true;
+
+    protected Heightmap motionBlocking = new MotionBlockingHeightmap(this);
+    protected Heightmap worldSurface = new WorldSurfaceHeightmap(this);
 
     // Key = ChunkUtils#getBlockIndex
     protected final Int2ObjectOpenHashMap<Block> entries = new Int2ObjectOpenHashMap<>(0);
@@ -47,7 +58,7 @@ public class DynamicChunk extends Chunk {
 
     private long lastChange;
     final CachedPacket chunkCache = new CachedPacket(this::createChunkPacket);
-    final CachedPacket lightCache = new CachedPacket(this::createLightPacket);
+    private static final DynamicRegistry<Biome> BIOME_REGISTRY = MinecraftServer.getBiomeRegistry();
 
     public DynamicChunk(@NotNull Instance instance, int chunkX, int chunkZ) {
         super(instance, chunkX, chunkZ, true);
@@ -57,28 +68,40 @@ public class DynamicChunk extends Chunk {
     }
 
     @Override
-    public void setBlock(int x, int y, int z, @NotNull Block block) {
+    public void setBlock(int x, int y, int z, @NotNull Block block,
+                         @Nullable BlockHandler.Placement placement,
+                         @Nullable BlockHandler.Destroy destroy) {
+        final DimensionType instanceDim = instance.getCachedDimensionType();
+        if (y >= instanceDim.maxY() || y < instanceDim.minY()) {
+            LOGGER.warn("tried to set a block outside the world bounds, should be within [{}, {}): {}",
+                    instanceDim.minY(), instanceDim.maxY(), y);
+            return;
+        }
         assertLock();
+
         this.lastChange = System.currentTimeMillis();
         this.chunkCache.invalidate();
-        this.lightCache.invalidate();
-        // Update pathfinder
-        if (columnarSpace != null) {
-            final ColumnarOcclusionFieldList columnarOcclusionFieldList = columnarSpace.occlusionFields();
-            final var blockDescription = PFBlock.get(block);
-            columnarOcclusionFieldList.onBlockChanged(x, y, z, blockDescription, 0);
-        }
+
         Section section = getSectionAt(y);
-        section.blockPalette()
-                .set(toSectionRelativeCoordinate(x), toSectionRelativeCoordinate(y), toSectionRelativeCoordinate(z), block.stateId());
+
+        int sectionRelativeX = toSectionRelativeCoordinate(x);
+        int sectionRelativeZ = toSectionRelativeCoordinate(z);
+
+        section.blockPalette().set(
+                sectionRelativeX,
+                toSectionRelativeCoordinate(y),
+                sectionRelativeZ,
+                block.stateId()
+        );
 
         final int index = ChunkUtils.getBlockIndex(x, y, z);
         // Handler
         final BlockHandler handler = block.handler();
+        final Block lastCachedBlock;
         if (handler != null || block.hasNbt() || block.registry().isBlockEntity()) {
-            this.entries.put(index, block);
+            lastCachedBlock = this.entries.put(index, block);
         } else {
-            this.entries.remove(index);
+            lastCachedBlock = this.entries.remove(index);
         }
         // Block tick
         if (handler != null && handler.isTickable()) {
@@ -86,17 +109,40 @@ public class DynamicChunk extends Chunk {
         } else {
             this.tickableMap.remove(index);
         }
+
+        // Update block handlers
+        var blockPosition = new Vec(x, y, z);
+        if (lastCachedBlock != null && lastCachedBlock.handler() != null) {
+            // Previous destroy
+            lastCachedBlock.handler().onDestroy(Objects.requireNonNullElseGet(destroy,
+                    () -> new BlockHandler.Destroy(lastCachedBlock, instance, blockPosition)));
+        }
+        if (handler != null) {
+            // New placement
+            final Block finalBlock = block;
+            handler.onPlace(Objects.requireNonNullElseGet(placement,
+                    () -> new BlockHandler.Placement(finalBlock, instance, blockPosition)));
+        }
+
+        // UpdateHeightMaps
+        if (needsCompleteHeightmapRefresh) calculateFullHeightmap();
+        motionBlocking.refresh(sectionRelativeX, y, sectionRelativeZ, block);
+        worldSurface.refresh(sectionRelativeX, y, sectionRelativeZ, block);
     }
 
     @Override
-    public void setBiome(int x, int y, int z, @NotNull Biome biome) {
+    public void setBiome(int x, int y, int z, @NotNull DynamicRegistry.Key<Biome> biome) {
         assertLock();
         this.chunkCache.invalidate();
         Section section = getSectionAt(y);
+
+        var id = BIOME_REGISTRY.getId(biome.namespace());
+        if (id == -1) throw new IllegalStateException("Biome has not been registered: " + biome.namespace());
+
         section.biomePalette().set(
                 toSectionRelativeCoordinate(x) / 4,
                 toSectionRelativeCoordinate(y) / 4,
-                toSectionRelativeCoordinate(z) / 4, biome.id());
+                toSectionRelativeCoordinate(z) / 4, id);
     }
 
     @Override
@@ -107,6 +153,27 @@ public class DynamicChunk extends Chunk {
     @Override
     public @NotNull Section getSection(int section) {
         return sections.get(section - minSection);
+    }
+
+    @Override
+    public @NotNull Heightmap motionBlockingHeightmap() {
+        return motionBlocking;
+    }
+
+    @Override
+    public @NotNull Heightmap worldSurfaceHeightmap() {
+        return worldSurface;
+    }
+
+    @Override
+    public void loadHeightmapsFromNBT(CompoundBinaryTag heightmapsNBT) {
+        if (heightmapsNBT.get(motionBlockingHeightmap().NBTName()) instanceof LongArrayBinaryTag array) {
+            motionBlockingHeightmap().loadFrom(array.value());
+        }
+
+        if (heightmapsNBT.get(worldSurfaceHeightmap().NBTName()) instanceof LongArrayBinaryTag array) {
+            worldSurfaceHeightmap().loadFrom(array.value());
+        }
     }
 
     @Override
@@ -144,12 +211,15 @@ public class DynamicChunk extends Chunk {
     }
 
     @Override
-    public @NotNull Biome getBiome(int x, int y, int z) {
+    public @NotNull DynamicRegistry.Key<Biome> getBiome(int x, int y, int z) {
         assertLock();
         final Section section = getSectionAt(y);
         final int id = section.biomePalette()
                 .get(toSectionRelativeCoordinate(x) / 4, toSectionRelativeCoordinate(y) / 4, toSectionRelativeCoordinate(z) / 4);
-        return MinecraftServer.getBiomeManager().getById(id);
+
+        DynamicRegistry.Key<Biome> biome = BIOME_REGISTRY.getKey(id);
+        Check.notNull(biome, "Biome with id {0} is not registered", id);
+        return biome;
     }
 
     @Override
@@ -158,15 +228,8 @@ public class DynamicChunk extends Chunk {
     }
 
     @Override
-    public void sendChunk(@NotNull Player player) {
-        if (!isLoaded()) return;
-        player.sendPacket(chunkCache);
-    }
-
-    @Override
-    public void sendChunk() {
-        if (!isLoaded()) return;
-        sendPacketToViewers(chunkCache);
+    public @NotNull SendablePacket getFullDataPacket() {
+        return chunkCache;
     }
 
     @Override
@@ -183,40 +246,33 @@ public class DynamicChunk extends Chunk {
         this.entries.clear();
     }
 
-    private synchronized @NotNull ChunkDataPacket createChunkPacket() {
-        final NBTCompound heightmapsNBT;
-        // TODO: don't hardcode heightmaps
-        // Heightmap
-        {
-            int dimensionHeight = getInstance().getDimensionType().getHeight();
-            int[] motionBlocking = new int[16 * 16];
-            int[] worldSurface = new int[16 * 16];
-            for (int x = 0; x < 16; x++) {
-                for (int z = 0; z < 16; z++) {
-                    motionBlocking[x + z * 16] = 0;
-                    worldSurface[x + z * 16] = dimensionHeight - 1;
-                }
-            }
-            final int bitsForHeight = MathUtils.bitsToRepresent(dimensionHeight);
-            heightmapsNBT = NBT.Compound(Map.of(
-                    "MOTION_BLOCKING", NBT.LongArray(encodeBlocks(motionBlocking, bitsForHeight)),
-                    "WORLD_SURFACE", NBT.LongArray(encodeBlocks(worldSurface, bitsForHeight))));
+    @Override
+    public void invalidate() {
+        this.chunkCache.invalidate();
+    }
+
+    private @NotNull ChunkDataPacket createChunkPacket() {
+        final byte[] data;
+        final CompoundBinaryTag heightmapsNBT;
+        synchronized (this) {
+            heightmapsNBT = getHeightmapNBT();
+
+            data = NetworkBuffer.makeArray(networkBuffer -> {
+                for (Section section : sections) networkBuffer.write(section);
+            });
         }
-        // Data
-        final byte[] data = ObjectPool.PACKET_POOL.use(buffer ->
-                NetworkBuffer.makeArray(networkBuffer -> {
-                    for (Section section : sections) networkBuffer.write(section);
-                }));
+
         return new ChunkDataPacket(chunkX, chunkZ,
                 new ChunkData(heightmapsNBT, data, entries),
-                createLightData());
+                createLightData(true)
+        );
     }
 
-    private synchronized @NotNull UpdateLightPacket createLightPacket() {
-        return new UpdateLightPacket(chunkX, chunkZ, createLightData());
+    @NotNull UpdateLightPacket createLightPacket() {
+        return new UpdateLightPacket(chunkX, chunkZ, createLightData(false));
     }
 
-    private LightData createLightData() {
+    protected LightData createLightData(boolean requiredFullChunk) {
         BitSet skyMask = new BitSet();
         BitSet blockMask = new BitSet();
         BitSet emptySkyMask = new BitSet();
@@ -227,8 +283,8 @@ public class DynamicChunk extends Chunk {
         int index = 0;
         for (Section section : sections) {
             index++;
-            final byte[] skyLight = section.getSkyLight();
-            final byte[] blockLight = section.getBlockLight();
+            final byte[] skyLight = section.skyLight().array();
+            final byte[] blockLight = section.blockLight().array();
             if (skyLight.length != 0) {
                 skyLights.add(skyLight);
                 skyMask.set(index);
@@ -242,10 +298,28 @@ public class DynamicChunk extends Chunk {
                 emptyBlockMask.set(index);
             }
         }
-        return new LightData(true,
+        return new LightData(
                 skyMask, blockMask,
                 emptySkyMask, emptyBlockMask,
-                skyLights, blockLights);
+                skyLights, blockLights
+        );
+    }
+
+    protected CompoundBinaryTag getHeightmapNBT() {
+        if (needsCompleteHeightmapRefresh) calculateFullHeightmap();
+        return CompoundBinaryTag.builder()
+                .putLongArray(motionBlocking.NBTName(), motionBlocking.getNBT())
+                .putLongArray(worldSurface.NBTName(), worldSurface.getNBT())
+                .build();
+    }
+
+    private void calculateFullHeightmap() {
+        int startY = Heightmap.getHighestBlockSection(this);
+
+        motionBlocking.refresh(startY);
+        worldSurface.refresh(startY);
+
+        needsCompleteHeightmapRefresh = false;
     }
 
     @Override
@@ -262,48 +336,5 @@ public class DynamicChunk extends Chunk {
 
     private void assertLock() {
         assert Thread.holdsLock(this) : "Chunk must be locked before access";
-    }
-
-    private static final int[] MAGIC = {
-            -1, -1, 0, Integer.MIN_VALUE, 0, 0, 1431655765, 1431655765, 0, Integer.MIN_VALUE,
-            0, 1, 858993459, 858993459, 0, 715827882, 715827882, 0, 613566756, 613566756,
-            0, Integer.MIN_VALUE, 0, 2, 477218588, 477218588, 0, 429496729, 429496729, 0,
-            390451572, 390451572, 0, 357913941, 357913941, 0, 330382099, 330382099, 0, 306783378,
-            306783378, 0, 286331153, 286331153, 0, Integer.MIN_VALUE, 0, 3, 252645135, 252645135,
-            0, 238609294, 238609294, 0, 226050910, 226050910, 0, 214748364, 214748364, 0,
-            204522252, 204522252, 0, 195225786, 195225786, 0, 186737708, 186737708, 0, 178956970,
-            178956970, 0, 171798691, 171798691, 0, 165191049, 165191049, 0, 159072862, 159072862,
-            0, 153391689, 153391689, 0, 148102320, 148102320, 0, 143165576, 143165576, 0,
-            138547332, 138547332, 0, Integer.MIN_VALUE, 0, 4, 130150524, 130150524, 0, 126322567,
-            126322567, 0, 122713351, 122713351, 0, 119304647, 119304647, 0, 116080197, 116080197,
-            0, 113025455, 113025455, 0, 110127366, 110127366, 0, 107374182, 107374182, 0,
-            104755299, 104755299, 0, 102261126, 102261126, 0, 99882960, 99882960, 0, 97612893,
-            97612893, 0, 95443717, 95443717, 0, 93368854, 93368854, 0, 91382282, 91382282,
-            0, 89478485, 89478485, 0, 87652393, 87652393, 0, 85899345, 85899345, 0,
-            84215045, 84215045, 0, 82595524, 82595524, 0, 81037118, 81037118, 0, 79536431,
-            79536431, 0, 78090314, 78090314, 0, 76695844, 76695844, 0, 75350303, 75350303,
-            0, 74051160, 74051160, 0, 72796055, 72796055, 0, 71582788, 71582788, 0,
-            70409299, 70409299, 0, 69273666, 69273666, 0, 68174084, 68174084, 0, Integer.MIN_VALUE,
-            0, 5};
-
-    private static long[] encodeBlocks(int[] blocks, int bitsPerEntry) {
-        final long maxEntryValue = (1L << bitsPerEntry) - 1;
-        final char valuesPerLong = (char) (64 / bitsPerEntry);
-        final int magicIndex = 3 * (valuesPerLong - 1);
-        final long divideMul = Integer.toUnsignedLong(MAGIC[magicIndex]);
-        final long divideAdd = Integer.toUnsignedLong(MAGIC[magicIndex + 1]);
-        final int divideShift = MAGIC[magicIndex + 2];
-        final int size = (blocks.length + valuesPerLong - 1) / valuesPerLong;
-
-        long[] data = new long[size];
-
-        for (int i = 0; i < blocks.length; i++) {
-            final long value = blocks[i];
-            final int cellIndex = (int) (i * divideMul + divideAdd >> 32L >> divideShift);
-            final int bitIndex = (i - cellIndex * valuesPerLong) * bitsPerEntry;
-            data[cellIndex] = data[cellIndex] & ~(maxEntryValue << bitIndex) | (value & maxEntryValue) << bitIndex;
-        }
-
-        return data;
     }
 }

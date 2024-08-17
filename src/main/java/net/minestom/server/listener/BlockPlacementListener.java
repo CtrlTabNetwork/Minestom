@@ -2,6 +2,7 @@ package net.minestom.server.listener;
 
 import net.minestom.server.MinecraftServer;
 import net.minestom.server.collision.CollisionUtils;
+import net.minestom.server.coordinate.BlockVec;
 import net.minestom.server.coordinate.Point;
 import net.minestom.server.coordinate.Vec;
 import net.minestom.server.entity.Entity;
@@ -19,13 +20,17 @@ import net.minestom.server.instance.block.BlockHandler;
 import net.minestom.server.instance.block.BlockManager;
 import net.minestom.server.instance.block.rule.BlockPlacementRule;
 import net.minestom.server.inventory.PlayerInventory;
+import net.minestom.server.item.ItemComponent;
 import net.minestom.server.item.ItemStack;
 import net.minestom.server.item.Material;
+import net.minestom.server.item.component.BlockPredicates;
+import net.minestom.server.item.component.ItemBlockState;
 import net.minestom.server.network.packet.client.play.ClientPlayerBlockPlacementPacket;
 import net.minestom.server.network.packet.server.play.AcknowledgeBlockChangePacket;
 import net.minestom.server.network.packet.server.play.BlockChangePacket;
 import net.minestom.server.utils.chunk.ChunkUtils;
 import net.minestom.server.utils.validate.Check;
+import net.minestom.server.world.DimensionType;
 
 public class BlockPlacementListener {
     private static final BlockManager BLOCK_MANAGER = MinecraftServer.getBlockManager();
@@ -34,7 +39,7 @@ public class BlockPlacementListener {
         final PlayerInventory playerInventory = player.getInventory();
         final Player.Hand hand = packet.hand();
         final BlockFace blockFace = packet.blockFace();
-        final Point blockPosition = packet.blockPosition();
+        Point blockPosition = packet.blockPosition();
 
         final Instance instance = player.getInstance();
         if (instance == null)
@@ -54,7 +59,7 @@ public class BlockPlacementListener {
 
         // Interact at block
         // FIXME: onUseOnBlock
-        PlayerBlockInteractEvent playerBlockInteractEvent = new PlayerBlockInteractEvent(player, hand, interactedBlock, blockPosition, cursorPosition, blockFace);
+        PlayerBlockInteractEvent playerBlockInteractEvent = new PlayerBlockInteractEvent(player, hand, interactedBlock, new BlockVec(blockPosition), cursorPosition, blockFace);
         EventDispatcher.call(playerBlockInteractEvent);
         boolean blockUse = playerBlockInteractEvent.isBlockingItemUse();
         if (!playerBlockInteractEvent.isCancelled()) {
@@ -64,7 +69,9 @@ public class BlockPlacementListener {
             }
         }
         if (blockUse) {
-            refresh(player, interactedChunk);
+            // If the usage was blocked then the world is already up-to-date (from the prior handlers),
+            // So ack the change with the current world state.
+            player.sendPacket(new AcknowledgeBlockChangePacket(packet.sequence()));
             return;
         }
 
@@ -73,6 +80,8 @@ public class BlockPlacementListener {
             // Player didn't try to place a block but interacted with one
             PlayerUseItemOnBlockEvent event = new PlayerUseItemOnBlockEvent(player, hand, usedItem, blockPosition, cursorPosition, blockFace);
             EventDispatcher.call(event);
+            // Ack the block change. This is required to reset the client prediction to the server state.
+            player.sendPacket(new AcknowledgeBlockChangePacket(packet.sequence()));
             return;
         }
 
@@ -83,14 +92,41 @@ public class BlockPlacementListener {
             canPlaceBlock = false; // Spectators can't place blocks
         } else if (player.getGameMode() == GameMode.ADVENTURE) {
             //Check if the block can be placed on the block
-            canPlaceBlock = usedItem.meta().canPlaceOn(interactedBlock);
+            BlockPredicates placePredicate = usedItem.get(ItemComponent.CAN_PLACE_ON, BlockPredicates.NEVER);
+            canPlaceBlock = placePredicate.test(interactedBlock);
         }
 
+
         // Get the newly placed block position
-        final int offsetX = blockFace == BlockFace.WEST ? -1 : blockFace == BlockFace.EAST ? 1 : 0;
-        final int offsetY = blockFace == BlockFace.BOTTOM ? -1 : blockFace == BlockFace.TOP ? 1 : 0;
-        final int offsetZ = blockFace == BlockFace.NORTH ? -1 : blockFace == BlockFace.SOUTH ? 1 : 0;
-        final Point placementPosition = blockPosition.add(offsetX, offsetY, offsetZ);
+        //todo it feels like it should be possible to have better replacement rules than this, feels pretty scuffed.
+        Point placementPosition = blockPosition;
+        var interactedPlacementRule = BLOCK_MANAGER.getBlockPlacementRule(interactedBlock);
+        if (!interactedBlock.isAir() && (interactedPlacementRule == null || !interactedPlacementRule.isSelfReplaceable(
+                new BlockPlacementRule.Replacement(interactedBlock, blockFace, cursorPosition, useMaterial)))) {
+            // If the block is not replaceable, try to place next to it.
+            final int offsetX = blockFace == BlockFace.WEST ? -1 : blockFace == BlockFace.EAST ? 1 : 0;
+            final int offsetY = blockFace == BlockFace.BOTTOM ? -1 : blockFace == BlockFace.TOP ? 1 : 0;
+            final int offsetZ = blockFace == BlockFace.NORTH ? -1 : blockFace == BlockFace.SOUTH ? 1 : 0;
+            placementPosition = blockPosition.add(offsetX, offsetY, offsetZ);
+
+            var placementBlock = instance.getBlock(placementPosition);
+            var placementRule = BLOCK_MANAGER.getBlockPlacementRule(placementBlock);
+            if (!placementBlock.registry().isReplaceable() && !(placementRule != null && placementRule.isSelfReplaceable(
+                    new BlockPlacementRule.Replacement(placementBlock, blockFace, cursorPosition, useMaterial)))) {
+                // If the block is still not replaceable, cancel the placement
+                canPlaceBlock = false;
+            }
+        }
+
+        final DimensionType instanceDim = instance.getCachedDimensionType();
+        if (placementPosition.y() >= instanceDim.maxY() || placementPosition.y() < instanceDim.minY()) {
+            return;
+        }
+
+        // Ensure that the final placement position is inside the world border.
+        if (!instance.getWorldBorder().inBounds(placementPosition)) {
+            canPlaceBlock = false;
+        }
 
         if (!canPlaceBlock) {
             // Send a block change with the real block in the instance to keep the client in sync,
@@ -109,7 +145,9 @@ public class BlockPlacementListener {
             return;
         }
 
-        final Block placedBlock = useMaterial.block();
+        final ItemBlockState blockState = usedItem.get(ItemComponent.BLOCK_STATE, ItemBlockState.EMPTY);
+        final Block placedBlock = blockState.apply(useMaterial.block());
+
         Entity collisionEntity = CollisionUtils.canPlaceBlockAt(instance, placementPosition, placedBlock);
         if (collisionEntity != null) {
             // If a player is trying to place a block on themselves, the client will send a block change but will not set the block on the client
@@ -123,7 +161,7 @@ public class BlockPlacementListener {
         }
 
         // BlockPlaceEvent check
-        PlayerBlockPlaceEvent playerBlockPlaceEvent = new PlayerBlockPlaceEvent(player, placedBlock, blockFace, placementPosition, packet.hand());
+        PlayerBlockPlaceEvent playerBlockPlaceEvent = new PlayerBlockPlaceEvent(player, placedBlock, blockFace, new BlockVec(placementPosition), cursorPosition, packet.hand());
         playerBlockPlaceEvent.consumeBlock(player.getGameMode() != GameMode.CREATIVE);
         EventDispatcher.call(playerBlockPlaceEvent);
         if (playerBlockPlaceEvent.isCancelled()) {
@@ -131,21 +169,11 @@ public class BlockPlacementListener {
             return;
         }
 
-        // BlockPlacementRule check
-        Block resultBlock = playerBlockPlaceEvent.getBlock();
-        final BlockPlacementRule blockPlacementRule = BLOCK_MANAGER.getBlockPlacementRule(resultBlock);
-        if (blockPlacementRule != null) {
-            // Get id from block placement rule instead of the event
-            resultBlock = blockPlacementRule.blockPlace(instance, resultBlock, blockFace, blockPosition, player);
-        }
-        if (resultBlock == null) {
-            refresh(player, chunk);
-            return;
-        }
         // Place the block
-        player.sendPacket(new AcknowledgeBlockChangePacket(packet.sequence()));
+        Block resultBlock = playerBlockPlaceEvent.getBlock();
         instance.placeBlock(new BlockHandler.PlayerPlacement(resultBlock, instance, placementPosition, player, hand, blockFace,
-                packet.cursorPositionX(), packet.cursorPositionY(), packet.cursorPositionZ()));
+                packet.cursorPositionX(), packet.cursorPositionY(), packet.cursorPositionZ()), playerBlockPlaceEvent.shouldDoBlockUpdates());
+        player.sendPacket(new AcknowledgeBlockChangePacket(packet.sequence()));
         // Block consuming
         if (playerBlockPlaceEvent.doesConsumeBlock()) {
             // Consume the block in the player's hand

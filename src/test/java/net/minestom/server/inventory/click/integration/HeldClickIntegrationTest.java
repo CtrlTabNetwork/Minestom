@@ -1,7 +1,5 @@
 package net.minestom.server.inventory.click.integration;
 
-import net.minestom.testing.Env;
-import net.minestom.testing.EnvTest;
 import net.minestom.server.coordinate.Pos;
 import net.minestom.server.entity.Player;
 import net.minestom.server.event.inventory.InventoryPreClickEvent;
@@ -12,6 +10,8 @@ import net.minestom.server.item.ItemStack;
 import net.minestom.server.item.Material;
 import net.minestom.server.network.packet.client.play.ClientClickWindowPacket;
 import net.minestom.server.utils.inventory.PlayerInventoryUtils;
+import net.minestom.testing.Env;
+import net.minestom.testing.EnvTest;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -113,10 +113,10 @@ public class HeldClickIntegrationTest {
                 if (event.getInventory() != null) assertEquals(inventory, event.getInventory());
                 assertEquals(0, event.getSlot());
                 assertEquals(ClickType.CHANGE_HELD, event.getClickType());
-                assertEquals(ItemStack.AIR, inventory.getCursorItem(player));
+                assertEquals(ItemStack.AIR, player.getInventory().getCursorItem());
             });
             heldClickOpenInventory(player, 0, 0);
-            assertEquals(ItemStack.AIR, inventory.getCursorItem(player));
+            assertEquals(ItemStack.AIR, player.getInventory().getCursorItem());
             assertEquals(ItemStack.AIR, inventory.getItemStack(0));
         }
         // Swap empty
@@ -124,10 +124,10 @@ public class HeldClickIntegrationTest {
             listener.followup(event -> {
                 if (event.getInventory() != null) assertEquals(inventory, event.getInventory());
                 assertTrue(event.getSlot() == 1 || event.getSlot() == 0);
-                assertEquals(ItemStack.AIR, inventory.getCursorItem(player));
+                assertEquals(ItemStack.AIR, player.getInventory().getCursorItem());
             });
             heldClickOpenInventory(player, 1, 0);
-            assertEquals(ItemStack.AIR, inventory.getCursorItem(player));
+            assertEquals(ItemStack.AIR, player.getInventory().getCursorItem());
             assertEquals(ItemStack.AIR, inventory.getItemStack(1));
             assertEquals(ItemStack.of(Material.DIAMOND), playerInv.getItemStack(0));
         }
@@ -136,10 +136,10 @@ public class HeldClickIntegrationTest {
             listener.followup(event -> {
                 if (event.getInventory() != null) assertEquals(inventory, event.getInventory());
                 assertTrue(event.getSlot() == 2 || event.getSlot() == 0);
-                assertEquals(ItemStack.AIR, inventory.getCursorItem(player));
+                assertEquals(ItemStack.AIR, player.getInventory().getCursorItem());
             });
             heldClickOpenInventory(player, 2, 0);
-            assertEquals(ItemStack.AIR, inventory.getCursorItem(player));
+            assertEquals(ItemStack.AIR, player.getInventory().getCursorItem());
             assertEquals(ItemStack.of(Material.DIAMOND), inventory.getItemStack(2));
             assertEquals(ItemStack.of(Material.GOLD_INGOT), playerInv.getItemStack(0));
         }
@@ -157,7 +157,7 @@ public class HeldClickIntegrationTest {
         {
             listener.followup(event -> event.setCancelled(true));
             heldClickOpenInventory(player, 2, 0);
-            assertEquals(ItemStack.AIR, inventory.getCursorItem(player));
+            assertEquals(ItemStack.AIR, player.getInventory().getCursorItem());
             assertEquals(ItemStack.of(Material.DIAMOND), inventory.getItemStack(2));
             assertEquals(ItemStack.of(Material.GOLD_INGOT), playerInv.getItemStack(0));
         }

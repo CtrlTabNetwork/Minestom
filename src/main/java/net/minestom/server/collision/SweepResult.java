@@ -1,13 +1,11 @@
 package net.minestom.server.collision;
 
-import net.minestom.server.coordinate.Point;
-import net.minestom.server.instance.block.Block;
+public final class SweepResult {
+    public static SweepResult NO_COLLISION  = new SweepResult(Double.MAX_VALUE, 0, 0, 0, null, 0, 0, 0);
 
-final class SweepResult {
     double res;
     double normalX, normalY, normalZ;
-    Point collidedShapePosition;
-    Block blockType;
+    double collidedPositionX, collidedPositionY, collidedPositionZ;
     Shape collidedShape;
 
     /**
@@ -18,11 +16,14 @@ final class SweepResult {
      * @param normalY -1 if intersected on bottom, 1 if intersected on top
      * @param normalZ -1 if intersected on front, 1 if intersected on back
      */
-    public SweepResult(double res, double normalX, double normalY, double normalZ, Shape collidedShape) {
+    public SweepResult(double res, double normalX, double normalY, double normalZ, Shape collidedShape, double collidedPosX, double collidedPosY, double collidedPosZ) {
         this.res = res;
         this.normalX = normalX;
         this.normalY = normalY;
         this.normalZ = normalZ;
         this.collidedShape = collidedShape;
+        this.collidedPositionX = collidedPosX;
+        this.collidedPositionY = collidedPosY;
+        this.collidedPositionZ = collidedPosZ;
     }
 }

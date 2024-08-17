@@ -4,7 +4,7 @@ import net.minestom.server.collision.BoundingBox;
 import net.minestom.server.coordinate.Point;
 import net.minestom.server.coordinate.Pos;
 import net.minestom.server.coordinate.Vec;
-import net.minestom.server.entity.metadata.ProjectileMeta;
+import net.minestom.server.entity.metadata.projectile.ProjectileMeta;
 import net.minestom.server.event.EventDispatcher;
 import net.minestom.server.event.entity.EntityShootEvent;
 import net.minestom.server.event.entity.projectile.ProjectileCollideWithBlockEvent;
@@ -13,6 +13,8 @@ import net.minestom.server.event.entity.projectile.ProjectileUncollideEvent;
 import net.minestom.server.instance.Chunk;
 import net.minestom.server.instance.Instance;
 import net.minestom.server.instance.block.Block;
+import net.minestom.server.thread.Acquirable;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -29,6 +31,7 @@ import java.util.stream.Stream;
 public class EntityProjectile extends Entity {
 
     private final Entity shooter;
+    private boolean wasStuck;
 
     public EntityProjectile(@Nullable Entity shooter, @NotNull EntityType entityType) {
         super(entityType);
@@ -90,6 +93,8 @@ public class EntityProjectile extends Entity {
     public void tick(long time) {
         final Pos posBefore = getPosition();
         super.tick(time);
+        if (super.isRemoved()) return;
+
         final Pos posNow = getPosition();
         if (isStuck(posBefore, posNow)) {
             if (super.onGround) {
@@ -99,12 +104,12 @@ public class EntityProjectile extends Entity {
             this.velocity = Vec.ZERO;
             sendPacketToViewersAndSelf(getVelocityPacket());
             setNoGravity(true);
+            wasStuck = true;
         } else {
-            if (!super.onGround) {
-                return;
-            }
+            if (!wasStuck) return;
+            wasStuck = false;
+            setNoGravity(super.onGround);
             super.onGround = false;
-            setNoGravity(false);
             EventDispatcher.call(new ProjectileUncollideEvent(this));
         }
     }
@@ -182,5 +187,12 @@ public class EntityProjectile extends Entity {
             }
         }
         return false;
+    }
+
+    @ApiStatus.Experimental
+    @SuppressWarnings("unchecked")
+    @Override
+    public @NotNull Acquirable<? extends EntityProjectile> acquirable() {
+        return (Acquirable<? extends EntityProjectile>) super.acquirable();
     }
 }

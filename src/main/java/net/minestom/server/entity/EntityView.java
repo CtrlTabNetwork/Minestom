@@ -4,7 +4,7 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.ints.IntIterator;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import it.unimi.dsi.fastutil.ints.IntSet;
-import net.minestom.server.MinecraftServer;
+import net.minestom.server.ServerFlag;
 import net.minestom.server.coordinate.Point;
 import net.minestom.server.instance.EntityTracker;
 import net.minestom.server.instance.Instance;
@@ -17,7 +17,7 @@ import java.util.function.Consumer;
 import java.util.function.Predicate;
 
 final class EntityView {
-    private static final int RANGE = MinecraftServer.getEntityViewDistance();
+    private static final int RANGE = ServerFlag.ENTITY_VIEW_DISTANCE;
     private final Entity entity;
     private final Set<Player> manualViewers = new HashSet<>();
 
@@ -46,6 +46,8 @@ final class EntityView {
                             player.viewEngine.viewerOption.register(entity);
                         }
                     }
+                    // Entity#updateNewViewer handles calling itself for passengers
+                    if (entity.getVehicle() != null) return;
                     entity.updateNewViewer(player);
                 },
                 player -> {
@@ -96,7 +98,8 @@ final class EntityView {
 
     public void forManuals(@NotNull Consumer<Player> consumer) {
         synchronized (mutex) {
-            this.manualViewers.forEach(consumer);
+            Set<Player> manualViewersCopy = Set.copyOf(this.manualViewers);
+            manualViewersCopy.forEach(consumer);
         }
     }
 
@@ -163,7 +166,7 @@ final class EntityView {
         }
 
         public void register(T entity) {
-            assert Entity.getEntity(entity.getEntityId()) == entity : "Unregistered entity shouldn't be registered as viewer";
+            assert entity.getInstance() != null : "Instance-less entity shouldn't be registered as viewer";
             this.bitSet.add(entity.getEntityId());
         }
 
@@ -243,10 +246,12 @@ final class EntityView {
             synchronized (mutex) {
                 var bitSet = viewableOption.bitSet;
                 if (bitSet.isEmpty()) return Collections.emptyIterator();
+                Instance instance = entity.getInstance();
+                if (instance == null) return Collections.emptyIterator();
                 players = new ArrayList<>(bitSet.size());
                 for (IntIterator it = bitSet.intIterator(); it.hasNext(); ) {
                     final int id = it.nextInt();
-                    final Player player = (Player) Entity.getEntity(id);
+                    final Player player = (Player) instance.getEntityById(id);
                     if (player != null) players.add(player);
                 }
             }

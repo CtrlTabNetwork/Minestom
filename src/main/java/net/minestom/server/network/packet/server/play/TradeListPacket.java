@@ -12,13 +12,15 @@ import static net.minestom.server.network.NetworkBuffer.*;
 
 public record TradeListPacket(int windowId, @NotNull List<Trade> trades,
                               int villagerLevel, int experience,
-                              boolean regularVillager, boolean canRestock) implements ServerPacket {
+                              boolean regularVillager, boolean canRestock) implements ServerPacket.Play {
+    public static final int MAX_TRADES = Short.MAX_VALUE;
+
     public TradeListPacket {
         trades = List.copyOf(trades);
     }
 
     public TradeListPacket(@NotNull NetworkBuffer reader) {
-        this(reader.read(VAR_INT), reader.readCollection(Trade::new),
+        this(reader.read(VAR_INT), reader.readCollection(Trade::new, MAX_TRADES),
                 reader.read(VAR_INT), reader.read(VAR_INT),
                 reader.read(BOOLEAN), reader.read(BOOLEAN));
     }
@@ -34,7 +36,7 @@ public record TradeListPacket(int windowId, @NotNull List<Trade> trades,
     }
 
     @Override
-    public int getId() {
+    public int playId() {
         return ServerPacketIdentifier.TRADE_LIST;
     }
 
@@ -43,17 +45,17 @@ public record TradeListPacket(int windowId, @NotNull List<Trade> trades,
                         int tradeUsesNumber, int maxTradeUsesNumber, int exp,
                         int specialPrice, float priceMultiplier, int demand) implements NetworkBuffer.Writer {
         public Trade(@NotNull NetworkBuffer reader) {
-            this(reader.read(ITEM), reader.read(ITEM),
-                    reader.readOptional(ITEM), reader.read(BOOLEAN),
+            this(reader.read(ItemStack.NETWORK_TYPE), reader.read(ItemStack.NETWORK_TYPE),
+                    reader.readOptional(ItemStack.NETWORK_TYPE), reader.read(BOOLEAN),
                     reader.read(INT), reader.read(INT), reader.read(INT),
                     reader.read(INT), reader.read(FLOAT), reader.read(INT));
         }
 
         @Override
         public void write(@NotNull NetworkBuffer writer) {
-            writer.write(ITEM, inputItem1);
-            writer.write(ITEM, result);
-            writer.writeOptional(ITEM, inputItem2);
+            writer.write(ItemStack.NETWORK_TYPE, inputItem1);
+            writer.write(ItemStack.NETWORK_TYPE, result);
+            writer.writeOptional(ItemStack.NETWORK_TYPE, inputItem2);
             writer.write(BOOLEAN, tradeDisabled);
             writer.write(INT, tradeUsesNumber);
             writer.write(INT, maxTradeUsesNumber);

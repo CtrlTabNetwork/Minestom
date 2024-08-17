@@ -1,6 +1,7 @@
 package net.minestom.server.timer;
 
 import it.unimi.dsi.fastutil.ints.Int2ObjectAVLTreeMap;
+import net.minestom.server.MinecraftServer;
 import org.jctools.queues.MpscUnboundedArrayQueue;
 import org.jetbrains.annotations.NotNull;
 
@@ -8,7 +9,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -21,11 +21,12 @@ final class SchedulerImpl implements Scheduler {
         thread.setDaemon(true);
         return thread;
     });
-    private static final ForkJoinPool EXECUTOR = ForkJoinPool.commonPool();
 
-    private final MpscUnboundedArrayQueue<TaskImpl> taskQueue = new MpscUnboundedArrayQueue<>(64);
-    // Tasks scheduled on a certain tick
-    private final Int2ObjectAVLTreeMap<List<TaskImpl>> tickTaskQueue = new Int2ObjectAVLTreeMap<>();
+    private final MpscUnboundedArrayQueue<TaskImpl> tasksToExecute = new MpscUnboundedArrayQueue<>(64);
+    private final MpscUnboundedArrayQueue<TaskImpl> tickEndTasksToExecute = new MpscUnboundedArrayQueue<>(64);
+    // Tasks scheduled on a certain tick/tick end
+    private final Int2ObjectAVLTreeMap<List<TaskImpl>> tickStartTaskQueue = new Int2ObjectAVLTreeMap<>();
+    private final Int2ObjectAVLTreeMap<List<TaskImpl>> tickEndTaskQueue = new Int2ObjectAVLTreeMap<>();
 
     private int tickState;
 
@@ -40,22 +41,32 @@ final class SchedulerImpl implements Scheduler {
     }
 
     private void processTick(int tickDelta) {
+        processTickTasks(tickStartTaskQueue, tasksToExecute, tickDelta);
+    }
+
+    @Override
+    public void processTickEnd() {
+        processTickTasks(tickEndTaskQueue, tickEndTasksToExecute, 0);
+    }
+
+    private void processTickTasks(Int2ObjectAVLTreeMap<List<TaskImpl>> targetTaskQueue, MpscUnboundedArrayQueue<TaskImpl> targetTasksToExecute, int tickDelta) {
         synchronized (this) {
             this.tickState += tickDelta;
             int tickToProcess;
-            while (!tickTaskQueue.isEmpty() && (tickToProcess = tickTaskQueue.firstIntKey()) <= tickState) {
-                final List<TaskImpl> tickScheduledTasks = tickTaskQueue.remove(tickToProcess);
-                if (tickScheduledTasks != null) tickScheduledTasks.forEach(taskQueue::relaxedOffer);
+            while (!targetTaskQueue.isEmpty() && (tickToProcess = targetTaskQueue.firstIntKey()) <= tickState) {
+                final List<TaskImpl> tickScheduledTasks = targetTaskQueue.remove(tickToProcess);
+                if (tickScheduledTasks != null) tickScheduledTasks.forEach(targetTasksToExecute::relaxedOffer);
             }
         }
+        runTasks(targetTasksToExecute);
+    }
+
+    private void runTasks(MpscUnboundedArrayQueue<TaskImpl> targetQueue) {
         // Run all tasks lock-free, either in the current thread or pool
-        if (!taskQueue.isEmpty()) {
-            this.taskQueue.drain(task -> {
+        if (!targetQueue.isEmpty()) {
+            targetQueue.drain(task -> {
                 if (!task.isAlive()) return;
-                switch (task.executionType()) {
-                    case SYNC -> handleTask(task);
-                    case ASYNC -> EXECUTOR.submit(() -> handleTask(task));
-                }
+                handleTask(task);
             });
         }
     }
@@ -71,32 +82,38 @@ final class SchedulerImpl implements Scheduler {
 
     void unparkTask(TaskImpl task) {
         if (task.tryUnpark())
-            this.taskQueue.relaxedOffer(task);
+            this.tasksToExecute.relaxedOffer(task);
     }
 
     private void safeExecute(TaskImpl task) {
         // Prevent the task from being executed in the current thread
         // By either adding the task to the execution queue or submitting it to the pool
         switch (task.executionType()) {
-            case SYNC -> taskQueue.offer(task);
-            case ASYNC -> EXECUTOR.submit(() -> {
-                if (!task.isAlive()) {
-                    return;
-                }
-                handleTask(task);
-            });
+            case TICK_START -> tasksToExecute.offer(task);
+            case TICK_END -> tickEndTasksToExecute.offer(task);
         }
     }
 
     private void handleTask(TaskImpl task) {
-        final TaskSchedule schedule = task.task().get();
+        TaskSchedule schedule;
+        try {
+            schedule = task.task().get();
+        } catch (Throwable t) {
+            MinecraftServer.getExceptionManager().handleException(new RuntimeException("Exception in scheduled task", t));
+            schedule = TaskSchedule.stop();
+        }
+
         if (schedule instanceof TaskScheduleImpl.DurationSchedule durationSchedule) {
             final Duration duration = durationSchedule.duration();
             SCHEDULER.schedule(() -> safeExecute(task), duration.toMillis(), TimeUnit.MILLISECONDS);
         } else if (schedule instanceof TaskScheduleImpl.TickSchedule tickSchedule) {
             synchronized (this) {
                 final int target = tickState + tickSchedule.tick();
-                this.tickTaskQueue.computeIfAbsent(target, i -> new ArrayList<>()).add(task);
+                var targetTaskQueue = switch (task.executionType()) {
+                    case TICK_START -> tickStartTaskQueue;
+                    case TICK_END -> tickEndTaskQueue;
+                };
+                targetTaskQueue.computeIfAbsent(target, i -> new ArrayList<>()).add(task);
             }
         } else if (schedule instanceof TaskScheduleImpl.FutureSchedule futureSchedule) {
             futureSchedule.future().thenRun(() -> safeExecute(task));
@@ -105,7 +122,10 @@ final class SchedulerImpl implements Scheduler {
         } else if (schedule instanceof TaskScheduleImpl.Stop) {
             task.cancel();
         } else if (schedule instanceof TaskScheduleImpl.Immediate) {
-            this.taskQueue.relaxedOffer(task);
+            if (task.executionType() == ExecutionType.TICK_END) {
+                tickEndTasksToExecute.relaxedOffer(task);
+            }
+            else tasksToExecute.relaxedOffer(task);
         }
     }
 }

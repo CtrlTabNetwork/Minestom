@@ -1,20 +1,27 @@
 package net.minestom.server.instance;
 
+import net.kyori.adventure.nbt.CompoundBinaryTag;
 import net.minestom.server.Tickable;
 import net.minestom.server.Viewable;
 import net.minestom.server.coordinate.Point;
 import net.minestom.server.coordinate.Vec;
 import net.minestom.server.entity.Player;
-import net.minestom.server.entity.pathfinding.PFColumnarSpace;
 import net.minestom.server.instance.block.Block;
+import net.minestom.server.instance.block.BlockHandler;
+import net.minestom.server.instance.generator.Generator;
+import net.minestom.server.instance.heightmap.Heightmap;
+import net.minestom.server.network.packet.server.SendablePacket;
 import net.minestom.server.network.packet.server.play.ChunkDataPacket;
 import net.minestom.server.snapshot.Snapshotable;
 import net.minestom.server.tag.TagHandler;
 import net.minestom.server.tag.Taggable;
 import net.minestom.server.utils.chunk.ChunkSupplier;
 import net.minestom.server.utils.chunk.ChunkUtils;
-import net.minestom.server.world.biomes.Biome;
+import net.minestom.server.world.DimensionType;
+import net.minestom.server.world.biome.Biome;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 import java.util.Set;
@@ -24,7 +31,7 @@ import java.util.UUID;
 
 /**
  * A chunk is a part of an {@link Instance}, limited by a size of 16x256x16 blocks and subdivided in 16 sections of 16 blocks height.
- * Should contains all the blocks located at those positions and manage their tick updates.
+ * Should contain all the blocks located at those positions and manage their tick updates.
  * Be aware that implementations do not need to be thread-safe, all chunks are guarded by their own instance ('this').
  * <p>
  * You can create your own implementation of this class by extending it
@@ -51,9 +58,6 @@ public abstract class Chunk implements Block.Getter, Block.Setter, Biome.Getter,
     protected volatile boolean loaded = true;
     private final Viewable viewable;
 
-    // Path finding
-    protected PFColumnarSpace columnarSpace;
-
     // Data
     private final TagHandler tagHandler = TagHandler.newHandler();
 
@@ -63,8 +67,9 @@ public abstract class Chunk implements Block.Getter, Block.Setter, Biome.Getter,
         this.chunkX = chunkX;
         this.chunkZ = chunkZ;
         this.shouldGenerate = shouldGenerate;
-        this.minSection = instance.getDimensionType().getMinY() / CHUNK_SECTION_SIZE;
-        this.maxSection = (instance.getDimensionType().getMinY() + instance.getDimensionType().getHeight()) / CHUNK_SECTION_SIZE;
+        final DimensionType instanceDim = instance.getCachedDimensionType();
+        this.minSection = instanceDim.minY() / CHUNK_SECTION_SIZE;
+        this.maxSection = (instanceDim.minY() + instanceDim.height()) / CHUNK_SECTION_SIZE;
         final List<SharedInstance> shared = instance instanceof InstanceContainer instanceContainer ?
                 instanceContainer.getSharedInstances() : List.of();
         this.viewable = instance.getEntityTracker().viewable(shared, chunkX, chunkZ);
@@ -85,11 +90,21 @@ public abstract class Chunk implements Block.Getter, Block.Setter, Biome.Getter,
      * @param block the block to place
      */
     @Override
-    public abstract void setBlock(int x, int y, int z, @NotNull Block block);
+    public void setBlock(int x, int y, int z, @NotNull Block block) {
+        setBlock(x, y, z, block, null, null);
+    }
+
+    protected abstract void setBlock(int x, int y, int z, @NotNull Block block,
+                                     @Nullable BlockHandler.Placement placement,
+                                     @Nullable BlockHandler.Destroy destroy);
 
     public abstract @NotNull List<Section> getSections();
 
     public abstract @NotNull Section getSection(int section);
+
+    public abstract @NotNull Heightmap motionBlockingHeightmap();
+    public abstract @NotNull Heightmap worldSurfaceHeightmap();
+    public abstract void loadHeightmapsFromNBT(CompoundBinaryTag heightmaps);
 
     public @NotNull Section getSectionAt(int blockY) {
         return getSection(ChunkUtils.getChunkCoordinate(blockY));
@@ -112,7 +127,7 @@ public abstract class Chunk implements Block.Getter, Block.Setter, Biome.Getter,
      * <p>
      * "Change" means here data used in {@link ChunkDataPacket}.
      * It is necessary to see if the cached version of this chunk can be used
-     * instead of re writing and compressing everything.
+     * instead of re-writing and compressing everything.
      *
      * @return the last change time in milliseconds
      */
@@ -123,9 +138,16 @@ public abstract class Chunk implements Block.Getter, Block.Setter, Biome.Getter,
      *
      * @param player the player
      */
-    public abstract void sendChunk(@NotNull Player player);
+    public void sendChunk(@NotNull Player player) {
+        player.sendChunk(this);
+    }
 
-    public abstract void sendChunk();
+    public void sendChunk() {
+        getViewers().forEach(this::sendChunk);
+    }
+
+    @ApiStatus.Internal
+    public abstract @NotNull SendablePacket getFullDataPacket();
 
     /**
      * Creates a copy of this chunk, including blocks state id, custom block id, biomes, update data.
@@ -210,11 +232,11 @@ public abstract class Chunk implements Block.Getter, Block.Setter, Biome.Getter,
     }
 
     /**
-     * Gets if this chunk will or had been loaded with a {@link ChunkGenerator}.
+     * Gets if this chunk will or had been loaded with a {@link Generator}.
      * <p>
      * If false, the chunk will be entirely empty when loaded.
      *
-     * @return true if this chunk is affected by a {@link ChunkGenerator}
+     * @return true if this chunk is affected by a {@link Generator}
      */
     public boolean shouldGenerate() {
         return shouldGenerate;
@@ -224,7 +246,7 @@ public abstract class Chunk implements Block.Getter, Block.Setter, Biome.Getter,
      * Gets if this chunk is read-only.
      * <p>
      * Being read-only should prevent block placing/breaking and setting block from an {@link Instance}.
-     * It does not affect {@link IChunkLoader} and {@link ChunkGenerator}.
+     * It does not affect {@link IChunkLoader} and {@link Generator}.
      *
      * @return true if the chunk is read-only
      */
@@ -236,21 +258,12 @@ public abstract class Chunk implements Block.Getter, Block.Setter, Biome.Getter,
      * Changes the read state of the chunk.
      * <p>
      * Being read-only should prevent block placing/breaking and setting block from an {@link Instance}.
-     * It does not affect {@link IChunkLoader} and {@link ChunkGenerator}.
+     * It does not affect {@link IChunkLoader} and {@link Generator}.
      *
      * @param readOnly true to make the chunk read-only, false otherwise
      */
     public void setReadOnly(boolean readOnly) {
         this.readOnly = readOnly;
-    }
-
-    /**
-     * Changes this chunk columnar space.
-     *
-     * @param columnarSpace the new columnar space
-     */
-    public void setColumnarSpace(PFColumnarSpace columnarSpace) {
-        this.columnarSpace = columnarSpace;
     }
 
     /**
@@ -261,6 +274,16 @@ public abstract class Chunk implements Block.Getter, Block.Setter, Biome.Getter,
     public boolean isLoaded() {
         return loaded;
     }
+
+    /**
+     * Called when the chunk has been successfully loaded.
+     */
+    protected void onLoad() {}
+
+    /**
+     * Called when the chunk generator has finished generating the chunk.
+     */
+    public void onGenerate() {}
 
     @Override
     public String toString() {
@@ -293,4 +316,9 @@ public abstract class Chunk implements Block.Getter, Block.Setter, Biome.Getter,
     protected void unload() {
         this.loaded = false;
     }
+
+    /**
+     * Invalidate the chunk caches
+     */
+    public abstract void invalidate();
 }

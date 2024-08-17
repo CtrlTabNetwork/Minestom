@@ -3,7 +3,6 @@ package net.minestom.server.coordinate;
 import net.minestom.server.instance.block.BlockFace;
 import net.minestom.server.utils.MathUtils;
 import net.minestom.server.utils.chunk.ChunkUtils;
-import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 
@@ -12,7 +11,7 @@ import java.util.function.DoubleUnaryOperator;
 /**
  * Represents a 3D point.
  */
-public sealed interface Point permits Vec, Pos {
+public sealed interface Point permits Vec, Pos, BlockVec {
 
     /**
      * Gets the X coordinate.
@@ -74,7 +73,6 @@ public sealed interface Point permits Vec, Pos {
     }
 
     @Contract(pure = true)
-    @ApiStatus.Experimental
     default int section() {
         return ChunkUtils.getChunkCoordinate(y());
     }

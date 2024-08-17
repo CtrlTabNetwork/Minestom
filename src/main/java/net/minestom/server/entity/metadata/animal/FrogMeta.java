@@ -2,13 +2,16 @@ package net.minestom.server.entity.metadata.animal;
 
 import net.minestom.server.entity.Entity;
 import net.minestom.server.entity.Metadata;
+import net.minestom.server.entity.MetadataHolder;
+import net.minestom.server.network.NetworkBuffer;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 public class FrogMeta extends AnimalMeta {
     public static final byte OFFSET = AnimalMeta.MAX_OFFSET;
     public static final byte MAX_OFFSET = OFFSET + 2;
 
-    public FrogMeta(@NotNull Entity entity, @NotNull Metadata metadata) {
+    public FrogMeta(@NotNull Entity entity, @NotNull MetadataHolder metadata) {
         super(entity, metadata);
     }
 
@@ -20,19 +23,21 @@ public class FrogMeta extends AnimalMeta {
         super.metadata.setIndex(OFFSET, Metadata.FrogVariant(value));
     }
 
-    public int getTongueTarget() {
-        return super.metadata.getIndex(OFFSET + 1, 0);
+    public @Nullable Integer getTongueTarget() {
+        return super.metadata.getIndex(OFFSET + 1, null);
     }
 
-    public void setTongueTarget(int value) {
+
+    public void setTongueTarget(@Nullable Integer value) {
         super.metadata.setIndex(OFFSET + 1, Metadata.OptVarInt(value));
     }
+
 
     public enum Variant {
         TEMPERATE,
         WARM,
         COLD;
 
-        private final static FrogMeta.Variant[] VALUES = values();
+        public static final NetworkBuffer.Type<Variant> NETWORK_TYPE = NetworkBuffer.Enum(Variant.class);
     }
 }

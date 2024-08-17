@@ -7,12 +7,12 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.UUID;
 
-import static net.minestom.server.network.NetworkBuffer.STRING;
-import static net.minestom.server.network.NetworkBuffer.VAR_INT;
+import static net.minestom.server.network.NetworkBuffer.*;
 
-public record LoginSuccessPacket(@NotNull UUID uuid, @NotNull String username, int properties) implements ServerPacket {
+public record LoginSuccessPacket(@NotNull UUID uuid, @NotNull String username,
+                                 int properties, boolean strictErrorHandling) implements ServerPacket.Login {
     public LoginSuccessPacket(@NotNull NetworkBuffer reader) {
-        this(reader.read(NetworkBuffer.UUID), reader.read(STRING), reader.read(VAR_INT));
+        this(reader.read(NetworkBuffer.UUID), reader.read(STRING), reader.read(VAR_INT), reader.read(BOOLEAN));
     }
 
     @Override
@@ -20,10 +20,11 @@ public record LoginSuccessPacket(@NotNull UUID uuid, @NotNull String username, i
         writer.write(NetworkBuffer.UUID, uuid);
         writer.write(STRING, username);
         writer.write(VAR_INT, properties);
+        writer.write(BOOLEAN, strictErrorHandling);
     }
 
     @Override
-    public int getId() {
+    public int loginId() {
         return ServerPacketIdentifier.LOGIN_SUCCESS;
     }
 }

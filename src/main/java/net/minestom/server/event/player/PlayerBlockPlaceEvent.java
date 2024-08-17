@@ -1,5 +1,6 @@
 package net.minestom.server.event.player;
 
+import net.minestom.server.coordinate.BlockVec;
 import net.minestom.server.coordinate.Point;
 import net.minestom.server.entity.Player;
 import net.minestom.server.event.trait.BlockEvent;
@@ -17,22 +18,26 @@ public class PlayerBlockPlaceEvent implements PlayerInstanceEvent, BlockEvent, C
     private final Player player;
     private Block block;
     private final BlockFace blockFace;
-    private final Point blockPosition;
+    private final BlockVec blockPosition;
+    private final Point cursorPosition;
     private final Player.Hand hand;
 
     private boolean consumeBlock;
+    private boolean doBlockUpdates;
 
     private boolean cancelled;
 
     public PlayerBlockPlaceEvent(@NotNull Player player, @NotNull Block block,
-                                 @NotNull BlockFace blockFace,
-                                 @NotNull Point blockPosition, @NotNull Player.Hand hand) {
+                                 @NotNull BlockFace blockFace, @NotNull BlockVec blockPosition,
+                                 @NotNull Point cursorPosition, @NotNull Player.Hand hand) {
         this.player = player;
         this.block = block;
         this.blockFace = blockFace;
         this.blockPosition = blockPosition;
+        this.cursorPosition = cursorPosition;
         this.hand = hand;
         this.consumeBlock = true;
+        this.doBlockUpdates = true;
     }
 
     /**
@@ -63,8 +68,13 @@ public class PlayerBlockPlaceEvent implements PlayerInstanceEvent, BlockEvent, C
      *
      * @return the block position
      */
-    public @NotNull Point getBlockPosition() {
+    @Override
+    public @NotNull BlockVec getBlockPosition() {
         return blockPosition;
+    }
+
+    public @NotNull Point getCursorPosition() {
+        return cursorPosition;
     }
 
     /**
@@ -92,6 +102,22 @@ public class PlayerBlockPlaceEvent implements PlayerInstanceEvent, BlockEvent, C
      */
     public boolean doesConsumeBlock() {
         return consumeBlock;
+    }
+
+    /**
+     * Should the place trigger updates (on self and neighbors)
+     * @param doBlockUpdates true if this placement should do block updates
+     */
+    public void setDoBlockUpdates(boolean doBlockUpdates) {
+        this.doBlockUpdates = doBlockUpdates;
+    }
+
+    /**
+     * Should the place trigger updates (on self and neighbors)
+     * @return true if this placement should do block updates
+     */
+    public boolean shouldDoBlockUpdates() {
+        return doBlockUpdates;
     }
 
     @Override

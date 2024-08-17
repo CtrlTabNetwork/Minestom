@@ -2,6 +2,7 @@ package net.minestom.server.event;
 
 import com.github.benmanes.caffeine.cache.Caffeine;
 import net.minestom.server.MinecraftServer;
+import net.minestom.server.ServerFlag;
 import net.minestom.server.event.trait.RecursiveEvent;
 import net.minestom.server.utils.validate.Check;
 import org.jetbrains.annotations.Contract;
@@ -18,6 +19,7 @@ import java.util.function.BiPredicate;
 import java.util.function.Consumer;
 
 non-sealed class EventNodeImpl<T extends Event> implements EventNode<T> {
+
     static final Object GLOBAL_CHILD_LOCK = new Object();
 
     private final Map<Class, Handle<T>> handleMap = new ConcurrentHashMap<>();
@@ -107,7 +109,7 @@ non-sealed class EventNodeImpl<T extends Event> implements EventNode<T> {
     public @NotNull EventNode<T> addChild(@NotNull EventNode<? extends T> child) {
         synchronized (GLOBAL_CHILD_LOCK) {
             final var childImpl = (EventNodeImpl<? extends T>) child;
-            Check.stateCondition(childImpl.parent != null, "Node already has a parent");
+            Check.stateCondition(!ServerFlag.EVENT_NODE_ALLOW_MULTIPLE_PARENTS && childImpl.parent != null, "Node already has a parent");
             Check.stateCondition(Objects.equals(parent, child), "Cannot have a child as parent");
             if (!children.add((EventNodeImpl<T>) childImpl)) return this; // Couldn't add the child (already present?)
             childImpl.parent = this;
@@ -218,6 +220,7 @@ non-sealed class EventNodeImpl<T extends Event> implements EventNode<T> {
 
     @Override
     public @Nullable EventNode<? super T> getParent() {
+        Check.stateCondition(ServerFlag.EVENT_NODE_ALLOW_MULTIPLE_PARENTS, "Cannot use getParent when multiple parents are allowed");
         return parent;
     }
 
@@ -334,6 +337,7 @@ non-sealed class EventNodeImpl<T extends Event> implements EventNode<T> {
 
         void invalidate() {
             this.updated = false;
+            this.listener = null;
         }
 
         @Nullable Consumer<E> updatedListener() {

@@ -1,15 +1,10 @@
 package net.minestom.server.network;
 
 import com.google.gson.JsonObject;
-
-import java.io.PrintStream;
-
 import net.kyori.adventure.bossbar.BossBar;
+import net.kyori.adventure.nbt.CompoundBinaryTag;
 import net.kyori.adventure.text.Component;
-import net.minestom.server.MinecraftServer;
 import net.minestom.server.coordinate.Vec;
-import net.minestom.server.crypto.ChatSession;
-import net.minestom.server.crypto.PlayerPublicKey;
 import net.minestom.server.entity.EquipmentSlot;
 import net.minestom.server.entity.GameMode;
 import net.minestom.server.entity.Metadata;
@@ -17,27 +12,21 @@ import net.minestom.server.entity.PlayerSkin;
 import net.minestom.server.item.ItemStack;
 import net.minestom.server.item.Material;
 import net.minestom.server.network.packet.client.ClientPacket;
-import net.minestom.server.network.packet.client.handshake.HandshakePacket;
+import net.minestom.server.network.packet.client.handshake.ClientHandshakePacket;
 import net.minestom.server.network.packet.server.ServerPacket;
-import net.minestom.server.network.packet.server.handshake.ResponsePacket;
+import net.minestom.server.network.packet.server.common.DisconnectPacket;
+import net.minestom.server.network.packet.server.common.PingResponsePacket;
 import net.minestom.server.network.packet.server.login.LoginDisconnectPacket;
 import net.minestom.server.network.packet.server.login.LoginSuccessPacket;
 import net.minestom.server.network.packet.server.login.SetCompressionPacket;
 import net.minestom.server.network.packet.server.play.*;
 import net.minestom.server.network.packet.server.play.DeclareRecipesPacket.Ingredient;
-import net.minestom.server.network.packet.server.status.PongPacket;
-import net.minestom.server.utils.crypto.KeyUtils;
-import org.apache.commons.net.util.Base64;
-import org.jglrxavpok.hephaistos.nbt.NBT;
+import net.minestom.server.network.packet.server.status.ResponsePacket;
+import net.minestom.server.recipe.RecipeCategory;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.InvocationTargetException;
-import java.nio.charset.StandardCharsets;
-import java.security.KeyFactory;
-import java.security.PublicKey;
-import java.security.spec.X509EncodedKeySpec;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -62,12 +51,12 @@ public class PacketWriteReadTest {
         // Handshake
         SERVER_PACKETS.add(new ResponsePacket(new JsonObject().toString()));
         // Status
-        SERVER_PACKETS.add(new PongPacket(5));
+        SERVER_PACKETS.add(new PingResponsePacket(5));
         // Login
         //SERVER_PACKETS.add(new EncryptionRequestPacket("server", generateByteArray(16), generateByteArray(16)));
         SERVER_PACKETS.add(new LoginDisconnectPacket(COMPONENT));
         //SERVER_PACKETS.add(new LoginPluginRequestPacket(5, "id", generateByteArray(16)));
-        SERVER_PACKETS.add(new LoginSuccessPacket(UUID.randomUUID(), "TheMode911", 0));
+        SERVER_PACKETS.add(new LoginSuccessPacket(UUID.randomUUID(), "TheMode911", 0, false));
         SERVER_PACKETS.add(new SetCompressionPacket(256));
         // Play
         SERVER_PACKETS.add(new AcknowledgeBlockChangePacket(0));
@@ -76,7 +65,7 @@ public class PacketWriteReadTest {
         SERVER_PACKETS.add(new BlockActionPacket(VEC, (byte) 5, (byte) 5, 5));
         SERVER_PACKETS.add(new BlockBreakAnimationPacket(5, VEC, (byte) 5));
         SERVER_PACKETS.add(new BlockChangePacket(VEC, 0));
-        SERVER_PACKETS.add(new BlockEntityDataPacket(VEC, 5, NBT.Compound(Map.of("key", NBT.String("value")))));
+        SERVER_PACKETS.add(new BlockEntityDataPacket(VEC, 5, CompoundBinaryTag.builder().putString("key", "value").build()));
         SERVER_PACKETS.add(new BossBarPacket(UUID.randomUUID(), new BossBarPacket.AddAction(COMPONENT, 5f, BossBar.Color.BLUE, BossBar.Overlay.PROGRESS, (byte) 2)));
         SERVER_PACKETS.add(new BossBarPacket(UUID.randomUUID(), new BossBarPacket.RemoveAction()));
         SERVER_PACKETS.add(new BossBarPacket(UUID.randomUUID(), new BossBarPacket.UpdateHealthAction(5f)));
@@ -90,29 +79,55 @@ public class PacketWriteReadTest {
         SERVER_PACKETS.add(new CloseWindowPacket((byte) 2));
         SERVER_PACKETS.add(new CollectItemPacket(5, 5, 5));
         SERVER_PACKETS.add(new CraftRecipeResponse((byte) 2, "recipe"));
-        SERVER_PACKETS.add(new DeathCombatEventPacket(5, 5, COMPONENT));
+        SERVER_PACKETS.add(new DeathCombatEventPacket(5, COMPONENT));
         SERVER_PACKETS.add(new DeclareRecipesPacket(
                 List.of(new DeclareRecipesPacket.DeclaredShapelessCraftingRecipe(
                                 "minecraft:sticks",
                                 "sticks",
+                                RecipeCategory.Crafting.MISC,
                                 List.of(new Ingredient(List.of(ItemStack.of(Material.OAK_PLANKS)))),
                                 ItemStack.of(Material.STICK)
                         ),
                         new DeclareRecipesPacket.DeclaredShapedCraftingRecipe(
                                 "minecraft:torch",
+                                "",
+                                RecipeCategory.Crafting.MISC,
                                 1,
                                 2,
-                                "",
                                 List.of(new Ingredient(List.of(ItemStack.of(Material.COAL))),
                                         new Ingredient(List.of(ItemStack.of(Material.STICK)))),
-                                ItemStack.of(Material.TORCH)
-                        ))));
+                                ItemStack.of(Material.TORCH),
+                                true
+                        ),
+                        new DeclareRecipesPacket.DeclaredBlastingRecipe(
+                                "minecraft:coal",
+                                "forging",
+                                RecipeCategory.Cooking.MISC,
+                                new Ingredient(List.of(ItemStack.of(Material.COAL))),
+                                ItemStack.of(Material.IRON_INGOT),
+                                5,
+                                5
+                        ),
+                        new DeclareRecipesPacket.DeclaredSmithingTransformRecipe(
+                                "minecraft:iron_to_diamond",
+                                new Ingredient(List.of(ItemStack.of(Material.COAST_ARMOR_TRIM_SMITHING_TEMPLATE))),
+                                new Ingredient(List.of(ItemStack.of(Material.DIAMOND))),
+                                new Ingredient(List.of(ItemStack.of(Material.IRON_INGOT))),
+                                ItemStack.of(Material.DIAMOND)
+                        ),
+                        new DeclareRecipesPacket.DeclaredSmithingTrimRecipe(
+                                "minecraft:iron_to_coast",
+                                new Ingredient(List.of(ItemStack.of(Material.IRON_INGOT))),
+                                new Ingredient(List.of(ItemStack.of(Material.COAST_ARMOR_TRIM_SMITHING_TEMPLATE))),
+                                new Ingredient(List.of(ItemStack.of(Material.COAL)))
+                        )
+                )));
 
         SERVER_PACKETS.add(new DestroyEntitiesPacket(List.of(5, 5, 5)));
         SERVER_PACKETS.add(new DisconnectPacket(COMPONENT));
         SERVER_PACKETS.add(new DisplayScoreboardPacket((byte) 5, "scoreboard"));
         SERVER_PACKETS.add(new EffectPacket(5, VEC, 5, false));
-        SERVER_PACKETS.add(new EndCombatEventPacket(5, 5));
+        SERVER_PACKETS.add(new EndCombatEventPacket(5));
         SERVER_PACKETS.add(new EnterCombatEventPacket());
         SERVER_PACKETS.add(new EntityAnimationPacket(5, EntityAnimationPacket.Animation.TAKE_DAMAGE));
         SERVER_PACKETS.add(new EntityEquipmentPacket(6, Map.of(EquipmentSlot.MAIN_HAND, ItemStack.of(Material.DIAMOND_SWORD))));
@@ -121,7 +136,7 @@ public class PacketWriteReadTest {
         SERVER_PACKETS.add(new EntityMetaDataPacket(5, Map.of(1, Metadata.VarInt(5))));
         SERVER_PACKETS.add(new EntityPositionAndRotationPacket(5, (short) 0, (short) 0, (short) 0, 45f, 45f, false));
         SERVER_PACKETS.add(new EntityPositionPacket(5, (short) 0, (short) 0, (short) 0, true));
-        SERVER_PACKETS.add(new EntityPropertiesPacket(5, List.of()));
+        SERVER_PACKETS.add(new EntityAttributesPacket(5, List.of()));
         SERVER_PACKETS.add(new EntityRotationPacket(5, 45f, 45f, false));
 
         final PlayerSkin skin = new PlayerSkin("hh", "hh");
@@ -142,7 +157,7 @@ public class PacketWriteReadTest {
 
     @BeforeAll
     public static void setupClient() {
-        CLIENT_PACKETS.add(new HandshakePacket(755, "localhost", 25565, 2));
+        CLIENT_PACKETS.add(new ClientHandshakePacket(755, "localhost", 25565, ClientHandshakePacket.Intent.LOGIN));
     }
 
     @Test

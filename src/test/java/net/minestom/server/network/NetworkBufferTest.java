@@ -1,6 +1,8 @@
 package net.minestom.server.network;
 
+import net.kyori.adventure.nbt.CompoundBinaryTag;
 import net.kyori.adventure.text.Component;
+import net.minestom.server.item.ItemComponent;
 import net.minestom.server.item.ItemStack;
 import net.minestom.server.item.Material;
 import org.jetbrains.annotations.NotNull;
@@ -8,12 +10,13 @@ import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.UnknownNullability;
 import org.junit.jupiter.api.Test;
 
-import java.util.UUID;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
+import static net.kyori.adventure.nbt.IntBinaryTag.intBinaryTag;
 import static net.minestom.server.network.NetworkBuffer.*;
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.*;
 
 public class NetworkBufferTest {
 
@@ -237,8 +240,8 @@ public class NetworkBufferTest {
 
     @Test
     public void nbt() {
-        assertBufferType(NetworkBuffer.NBT, org.jglrxavpok.hephaistos.nbt.NBT.Int(5));
-        assertBufferType(NetworkBuffer.NBT, org.jglrxavpok.hephaistos.nbt.NBT.Compound(Map.of("key", org.jglrxavpok.hephaistos.nbt.NBT.Int(5))));
+        assertBufferType(NetworkBuffer.NBT, intBinaryTag(5));
+        assertBufferType(NetworkBuffer.NBT, CompoundBinaryTag.from(Map.of("key", intBinaryTag(5))));
     }
 
     @Test
@@ -254,9 +257,9 @@ public class NetworkBufferTest {
 
     @Test
     public void item() {
-        assertBufferType(ITEM, ItemStack.AIR);
-        assertBufferType(ITEM, ItemStack.of(Material.STONE, 1));
-        assertBufferType(ITEM, ItemStack.of(Material.DIAMOND_AXE, 1).withMeta(builder -> builder.damage(1)));
+        assertBufferType(ItemStack.NETWORK_TYPE, ItemStack.AIR);
+        assertBufferType(ItemStack.NETWORK_TYPE, ItemStack.of(Material.STONE, 1));
+        assertBufferType(ItemStack.NETWORK_TYPE, ItemStack.of(Material.DIAMOND_AXE, 1).with(ItemComponent.DAMAGE, 1));
     }
 
     @Test
@@ -269,6 +272,28 @@ public class NetworkBufferTest {
     public void collection() {
         assertBufferTypeCollection(BOOLEAN, List.of(), new byte[]{0});
         assertBufferTypeCollection(BOOLEAN, List.of(true), new byte[]{0x01, 0x01});
+    }
+
+    @Test
+    public void collectionMaxSize() {
+        var buffer = new NetworkBuffer();
+        var list = new ArrayList<Boolean>();
+        for (int i = 0; i < 1000; i++)
+            list.add(true);
+        buffer.writeCollection(BOOLEAN, list);
+
+        assertThrows(IllegalArgumentException.class, () -> buffer.readCollection(BOOLEAN, 10));
+        buffer.readIndex(0); // reset
+        assertThrows(IllegalArgumentException.class, () -> buffer.readCollection(b -> b.read(BOOLEAN), 10));
+    }
+
+    @Test
+    public void oomStringRegression() {
+        var buffer = new NetworkBuffer(ByteBuffer.allocate(100));
+        buffer.write(VAR_INT, Integer.MAX_VALUE); // String length
+        buffer.write(RAW_BYTES, "Hello".getBytes(StandardCharsets.UTF_8)); // String data
+
+        assertThrows(IllegalArgumentException.class, () -> buffer.read(STRING)); // oom
     }
 
     static <T> void assertBufferType(NetworkBuffer.@NotNull Type<T> type, @UnknownNullability T value, byte[] expected, @NotNull Action<T> action) {
@@ -346,7 +371,7 @@ public class NetworkBufferTest {
         assertEquals(0, buffer.readIndex());
         if (expected != null) assertEquals(expected.length, buffer.writeIndex());
 
-        var actual = buffer.readCollection(type);
+        var actual = buffer.readCollection(type, Integer.MAX_VALUE);
 
         assertEquals(values, actual);
         if (expected != null) assertEquals(expected.length, buffer.readIndex());

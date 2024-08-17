@@ -2,13 +2,14 @@ package net.minestom.server.entity.metadata.animal;
 
 import net.minestom.server.entity.Entity;
 import net.minestom.server.entity.Metadata;
+import net.minestom.server.entity.MetadataHolder;
 import org.jetbrains.annotations.NotNull;
 
 public class GoatMeta extends AnimalMeta {
     public static final byte OFFSET = AnimalMeta.MAX_OFFSET;
-    public static final byte MAX_OFFSET = OFFSET + 1;
+    public static final byte MAX_OFFSET = OFFSET + 3;
 
-    public GoatMeta(@NotNull Entity entity, @NotNull Metadata metadata) {
+    public GoatMeta(@NotNull Entity entity, @NotNull MetadataHolder metadata) {
         super(entity, metadata);
     }
 
@@ -18,5 +19,21 @@ public class GoatMeta extends AnimalMeta {
 
     public void setScreaming(boolean screaming) {
         metadata.setIndex(OFFSET, Metadata.Boolean(screaming));
+    }
+
+    public boolean hasLeftHorn() {
+        return metadata.getIndex(OFFSET + 1, true);
+    }
+
+    public void setLeftHorn(boolean leftHorn) {
+        metadata.setIndex(OFFSET + 1, Metadata.Boolean(leftHorn));
+    }
+
+    public boolean hasRightHorn() {
+        return metadata.getIndex(OFFSET + 2, true);
+    }
+
+    public void setRightHorn(boolean rightHorn) {
+        metadata.setIndex(OFFSET + 2, Metadata.Boolean(rightHorn));
     }
 }

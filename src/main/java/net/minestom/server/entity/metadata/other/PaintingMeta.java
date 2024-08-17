@@ -1,130 +1,181 @@
 package net.minestom.server.entity.metadata.other;
 
+import net.kyori.adventure.nbt.CompoundBinaryTag;
 import net.minestom.server.entity.Entity;
 import net.minestom.server.entity.Metadata;
+import net.minestom.server.entity.MetadataHolder;
 import net.minestom.server.entity.metadata.EntityMeta;
-import net.minestom.server.utils.Direction;
+import net.minestom.server.entity.metadata.ObjectDataProvider;
+import net.minestom.server.network.NetworkBuffer;
+import net.minestom.server.registry.DynamicRegistry;
+import net.minestom.server.registry.ProtocolObject;
+import net.minestom.server.registry.Registries;
+import net.minestom.server.registry.Registry;
+import net.minestom.server.utils.NamespaceID;
+import net.minestom.server.utils.nbt.BinaryTagSerializer;
 import net.minestom.server.utils.validate.Check;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-import java.util.Locale;
-
-public class PaintingMeta extends EntityMeta {
+public class PaintingMeta extends EntityMeta implements ObjectDataProvider {
     public static final byte OFFSET = EntityMeta.MAX_OFFSET;
-    public static final byte MAX_OFFSET = OFFSET + 0;
+    public static final byte MAX_OFFSET = OFFSET + 1;
 
-    private Motive motive = Motive.KEBAB;
-    private Direction direction = Direction.SOUTH;
+    private Orientation orientation = null;
 
-    public PaintingMeta(@NotNull Entity entity, @NotNull Metadata metadata) {
+    public PaintingMeta(@NotNull Entity entity, @NotNull MetadataHolder metadata) {
         super(entity, metadata);
     }
 
-    @NotNull
-    public Motive getMotive() {
-        return motive;
+    public @NotNull DynamicRegistry.Key<Variant> getVariant() {
+        return super.metadata.getIndex(OFFSET, Variant.KEBAB);
     }
 
-    /**
-     * Sets motive of a painting.
-     * This is possible only before spawn packet is sent.
-     *
-     * @param motive motive of a painting.
-     */
-    public void setMotive(@NotNull Motive motive) {
-        this.motive = motive;
+    public void setVariant(@NotNull DynamicRegistry.Key<Variant> value) {
+        super.metadata.setIndex(OFFSET, Metadata.PaintingVariant(value));
     }
 
     @NotNull
-    public Direction getDirection() {
-        return direction;
+    public Orientation getOrientation() {
+        return this.orientation;
     }
 
     /**
-     * Sets direction of a painting.
+     * Sets orientation of the painting.
      * This is possible only before spawn packet is sent.
      *
-     * @param direction direction of a painting.
+     * @param orientation the orientation of the painting.
      */
-    public void setDirection(@NotNull Direction direction) {
-        Check.argCondition(direction == Direction.UP || direction == Direction.DOWN, "Painting can't look up or down!");
-        this.direction = direction;
+    public void setOrientation(@NotNull Orientation orientation) {
+        this.orientation = orientation;
     }
 
-    /*
-      TODO: write a parser?
-      Currently none of existing ones support it.
-     */
-    public enum Motive {
-        KEBAB(0, 0, 16, 16),
-        AZTEC(16, 0, 16, 16),
-        ALBAN(32, 0, 16, 16),
-        AZTEC2(48, 0, 16, 16),
-        BOMB(64, 0, 16, 16),
-        PLANT(80, 0, 16, 16),
-        WASTELAND(96, 0, 16, 16),
-        POOL(0, 32, 32, 16),
-        COURBET(32, 32, 32, 16),
-        SEA(64, 32, 32, 16),
-        SUNSET(96, 32, 32, 16),
-        CREEBET(128, 32, 32, 16),
-        WANDERER(0, 64, 16, 32),
-        GRAHAM(16, 64, 16, 32),
-        MATCH(0, 128, 32, 32),
-        BUST(32, 128, 32, 32),
-        STAGE(64, 128, 32, 32),
-        VOID(96, 128, 32, 32),
-        SKULL_AND_ROSES("skull_and_roses", 128, 128, 32, 32),
-        WITHER(160, 128, 32, 32),
-        FIGHTERS(0, 96, 64, 32),
-        POINTER(0, 192, 64, 64),
-        PIGSCENE(64, 192, 64, 64),
-        BURNING_SKULL(128, 192, 64, 64),
-        SKELETON(192, 64, 64, 48),
-        DONKEY_KONG(192, 112, 64, 48);
+    @Override
+    public int getObjectData() {
+        Check.stateCondition(this.orientation == null, "Painting orientation must be set before spawn");
+        return this.orientation.id();
+    }
 
-        private final String name;
-        private final int x;
-        private final int y;
-        private final int width;
-        private final int height;
+    @Override
+    public boolean requiresVelocityPacketAtSpawn() {
+        return false;
+    }
 
-        Motive(String name, int x, int y, int width, int height) {
-            this.name = name;
-            this.x = x;
-            this.y = y;
-            this.width = width;
-            this.height = height;
+    public enum Orientation {
+        NORTH(2),
+        SOUTH(3),
+        WEST(4),
+        EAST(5);
+
+        private final int id;
+
+        Orientation(int id) {
+            this.id = id;
         }
 
-        Motive(int x, int y, int width, int height) {
-            this.name = "minecraft:" + name().toLowerCase(Locale.ROOT);
-            this.x = x;
-            this.y = y;
-            this.width = width;
-            this.height = height;
+        public int id() {
+            return id;
+        }
+    }
+
+    public sealed interface Variant extends ProtocolObject, PaintingVariants permits VariantImpl {
+        @NotNull NetworkBuffer.Type<DynamicRegistry.Key<Variant>> NETWORK_TYPE = NetworkBuffer.RegistryKey(Registries::paintingVariant);
+        @NotNull BinaryTagSerializer<DynamicRegistry.Key<Variant>> NBT_TYPE = BinaryTagSerializer.registryKey(Registries::paintingVariant);
+
+        static @NotNull Variant create(
+                @NotNull NamespaceID assetId,
+                int width, int height
+        ) {
+            return new VariantImpl(assetId, width, height, null);
         }
 
-        public String getName() {
-            return this.name;
+        static @NotNull Builder builder() {
+            return new Builder();
         }
 
-        public int getX() {
-            return this.x;
+        /**
+         * <p>Creates a new registry for painting variants, loading the vanilla painting variants.</p>
+         *
+         * @see net.minestom.server.MinecraftServer to get an existing instance of the registry
+         */
+        @ApiStatus.Internal
+        static @NotNull DynamicRegistry<Variant> createDefaultRegistry() {
+            return DynamicRegistry.create(
+                    "minecraft:painting_variant", VariantImpl.REGISTRY_NBT_TYPE, Registry.Resource.PAINTING_VARIANTS,
+                    (namespace, props) -> new VariantImpl(Registry.paintingVariant(namespace, props))
+            );
         }
 
-        public int getY() {
-            return this.y;
+        @NotNull NamespaceID assetId();
+
+        int width();
+
+        int height();
+
+        @Override
+        @Nullable Registry.PaintingVariantEntry registry();
+
+        class Builder {
+            private NamespaceID assetId;
+            private int width;
+            private int height;
+
+            private Builder() {
+            }
+
+            @Contract(value = "_ -> this", pure = true)
+            public @NotNull Builder assetId(@NotNull NamespaceID assetId) {
+                this.assetId = assetId;
+                return this;
+            }
+
+            @Contract(value = "_ -> this", pure = true)
+            public @NotNull Builder width(int width) {
+                this.width = width;
+                return this;
+            }
+
+            @Contract(value = "_ -> this", pure = true)
+            public @NotNull Builder height(int height) {
+                this.height = height;
+                return this;
+            }
+
+            public @NotNull Variant build() {
+                return new VariantImpl(assetId, width, height, null);
+            }
+        }
+    }
+
+    record VariantImpl(
+            @NotNull NamespaceID assetId,
+            int width,
+            int height,
+            @Nullable Registry.PaintingVariantEntry registry
+    ) implements Variant {
+        private static final BinaryTagSerializer<Variant> REGISTRY_NBT_TYPE = BinaryTagSerializer.COMPOUND.map(
+                tag -> {
+                    throw new UnsupportedOperationException("PaintingVariant is read-only");
+                },
+                variant -> CompoundBinaryTag.builder()
+                        .putString("asset_id", variant.assetId().asString())
+                        .putInt("width", variant.width())
+                        .putInt("height", variant.height())
+                        .build()
+        );
+
+        @SuppressWarnings("ConstantValue") // The builder can violate the nullability constraints
+        VariantImpl {
+            Check.argCondition(assetId == null, "missing asset id");
+            Check.argCondition(width <= 0, "width must be positive");
+            Check.argCondition(height <= 0, "height must be positive");
         }
 
-        public int getWidth() {
-            return this.width;
+        VariantImpl(@NotNull Registry.PaintingVariantEntry registry) {
+            this(registry.assetId(), registry.width(), registry.height(), registry);
         }
-
-        public int getHeight() {
-            return this.height;
-        }
-
     }
 
 }

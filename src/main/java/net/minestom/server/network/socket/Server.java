@@ -1,9 +1,12 @@
 package net.minestom.server.network.socket;
 
 import net.minestom.server.MinecraftServer;
+import net.minestom.server.ServerFlag;
 import net.minestom.server.network.PacketProcessor;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.*;
@@ -16,12 +19,7 @@ import java.util.Arrays;
 import java.util.List;
 
 public final class Server {
-    public static final int WORKER_COUNT = Integer.getInteger("minestom.workers", Runtime.getRuntime().availableProcessors());
-    public static final int MAX_PACKET_SIZE = Integer.getInteger("minestom.max-packet-size", 2_097_151); // 3 bytes var-int
-    public static final int SOCKET_SEND_BUFFER_SIZE = Integer.getInteger("minestom.send-buffer-size", 262_143);
-    public static final int SOCKET_RECEIVE_BUFFER_SIZE = Integer.getInteger("minestom.receive-buffer-size", 32_767);
-
-    public static final boolean NO_DELAY = true;
+    private static final Logger LOGGER = LoggerFactory.getLogger(Server.class);
 
     private volatile boolean stop;
 
@@ -37,7 +35,7 @@ public final class Server {
 
     public Server(PacketProcessor packetProcessor) throws IOException {
         this.packetProcessor = packetProcessor;
-        Worker[] workers = new Worker[WORKER_COUNT];
+        Worker[] workers = new Worker[ServerFlag.WORKER_COUNT];
         Arrays.setAll(workers, value -> new Worker(this));
         this.workers = List.of(workers);
     }
@@ -94,6 +92,10 @@ public final class Server {
         }, "Ms-entrypoint").start();
     }
 
+    public void tick() {
+        this.workers.forEach(Worker::tick);
+    }
+
     public boolean isOpen() {
         return !stop;
     }
@@ -111,8 +113,14 @@ public final class Server {
         } catch (IOException e) {
             MinecraftServer.getExceptionManager().handleException(e);
         }
-        this.selector.wakeup();
-        this.workers.forEach(worker -> worker.selector.wakeup());
+        try {
+            this.selector.wakeup();
+            this.selector.close();
+        } catch (IOException e) {
+            LOGGER.error("Server socket selector could not be closed", e);
+            System.exit(-1);
+        }
+        this.workers.forEach(Worker::close);
     }
 
     @ApiStatus.Internal
@@ -133,7 +141,7 @@ public final class Server {
     }
 
     private Worker findWorker() {
-        this.index = ++index % WORKER_COUNT;
+        this.index = ++index % ServerFlag.WORKER_COUNT;
         return workers.get(index);
     }
 }

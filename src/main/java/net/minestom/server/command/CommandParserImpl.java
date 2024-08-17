@@ -1,10 +1,7 @@
 package net.minestom.server.command;
 
 import net.minestom.server.command.Graph.Node;
-import net.minestom.server.command.builder.ArgumentCallback;
-import net.minestom.server.command.builder.CommandContext;
-import net.minestom.server.command.builder.CommandData;
-import net.minestom.server.command.builder.CommandExecutor;
+import net.minestom.server.command.builder.*;
 import net.minestom.server.command.builder.arguments.Argument;
 import net.minestom.server.command.builder.condition.CommandCondition;
 import net.minestom.server.command.builder.exception.ArgumentSyntaxException;
@@ -21,7 +18,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
-import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 final class CommandParserImpl implements CommandParser {
@@ -98,12 +94,12 @@ final class CommandParserImpl implements CommandParser {
     }
 
     @Override
-    public @NotNull CommandParser.Result parse(@NotNull Graph graph, @NotNull String input) {
+    public @NotNull CommandParser.Result parse(@NotNull CommandSender sender, @NotNull Graph graph, @NotNull String input) {
         final CommandStringReader reader = new CommandStringReader(input);
         Chain chain = new Chain();
         Node parent = graph.root();
 
-        NodeResult result = parseNode(parent, chain, reader);
+        NodeResult result = parseNode(sender, parent, chain, reader);
         chain = result.chain;
 
         NodeResult lastNodeResult = chain.nodeResults.peekLast();
@@ -130,13 +126,13 @@ final class CommandParserImpl implements CommandParser {
         return obj == null ? null : getter.apply(obj);
     }
 
-    private static NodeResult parseNode(Node node, Chain chain, CommandStringReader reader) {
+    private static NodeResult parseNode(@NotNull CommandSender sender, Node node, Chain chain, CommandStringReader reader) {
         chain = chain.fork();
         Argument<?> argument = node.argument();
         int start = reader.cursor();
 
         if (reader.hasRemaining()) {
-            ArgumentResult<?> result = parseArgument(argument, reader);
+            ArgumentResult<?> result = parseArgument(sender, argument, reader);
             SuggestionCallback suggestionCallback = argument.getSuggestionCallback();
             NodeResult nodeResult = new NodeResult(node, chain, (ArgumentResult<Object>) result, suggestionCallback);
             chain.append(nodeResult);
@@ -151,9 +147,9 @@ final class CommandParserImpl implements CommandParser {
             }
         } else {
             // Nothing left, yet we're still being asked to parse? There must be defaults then
-            Supplier<?> defaultSupplier = node.argument().getDefaultValue();
+            Function<CommandSender, ?> defaultSupplier = node.argument().getDefaultValue();
             if (defaultSupplier != null) {
-                Object value = defaultSupplier.get();
+                Object value = defaultSupplier.apply(sender);
                 ArgumentResult<Object> argumentResult = new ArgumentResult.Success<>(value, "");
                 chain.append(new NodeResult(node, chain, argumentResult, argument.getSuggestionCallback()));
                 // Add the default to the chain, and then carry on dealing with this node
@@ -173,7 +169,7 @@ final class CommandParserImpl implements CommandParser {
 
         NodeResult error = null;
         for (Node child : node.next()) {
-            NodeResult childResult = parseNode(child, chain, reader);
+            NodeResult childResult = parseNode(sender, child, chain, reader);
             if (childResult.argumentResult instanceof ArgumentResult.Success<Object>) {
                 // Assume that there is only one successful node for a given chain of arguments
                 return childResult;
@@ -418,18 +414,18 @@ final class CommandParserImpl implements CommandParser {
 
     // ARGUMENT
 
-    private static <T> ArgumentResult<T> parseArgument(Argument<T> argument, CommandStringReader reader) {
+    private static <T> ArgumentResult<T> parseArgument(@NotNull CommandSender sender, Argument<T> argument, CommandStringReader reader) {
         // Handle specific type without loop
         try {
             // Single word argument
             if (!argument.allowSpace()) {
                 final String word = reader.readWord();
-                return new ArgumentResult.Success<>(argument.parse(word), word);
+                return new ArgumentResult.Success<>(argument.parse(sender, word), word);
             }
             // Complete input argument
             if (argument.useRemaining()) {
                 final String remaining = reader.readRemaining();
-                return new ArgumentResult.Success<>(argument.parse(remaining), remaining);
+                return new ArgumentResult.Success<>(argument.parse(sender, remaining), remaining);
             }
         } catch (ArgumentSyntaxException ignored) {
             return new ArgumentResult.IncompatibleType<>();
@@ -440,7 +436,7 @@ final class CommandParserImpl implements CommandParser {
         while (true) {
             try {
                 final String input = current.toString();
-                return new ArgumentResult.Success<>(argument.parse(input), input);
+                return new ArgumentResult.Success<>(argument.parse(sender, input), input);
             } catch (ArgumentSyntaxException ignored) {
                 if (!reader.hasRemaining()) break;
                 current.append(" ");
