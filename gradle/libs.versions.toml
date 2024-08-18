@@ -7,6 +7,8 @@ data = "1.21-rv3"
 adventure = "4.17.0"
 jetbrainsAnnotations = "23.0.0"
 slf4j = "2.0.7"
+jansi = "2.2.0"
+tinylog = "2.7.0"
 
 # Performance / Data Structures
 caffeine = "3.1.6"
@@ -50,6 +52,8 @@ minestomData = { group = "net.minestom", name = "data", version.ref = "data" }
 hephaistos = { group = "io.github.jglrxavpok.hephaistos", name = "common", version.ref = "hephaistos" }
 jetbrainsAnnotations = { group = "org.jetbrains", name = "annotations", version.ref = "jetbrainsAnnotations" }
 slf4j = { group = "org.slf4j", name = "slf4j-api", version.ref = "slf4j"}
+jansi = { group = "org.fusesource.jansi", name = "jansi", version.ref = "jansi"}
+tinylog = { group = "org.tinylog", name = "tinylog-impl", version.ref = "tinylog" }
 
 # Performance / Data Structures
 caffeine = { group = "com.github.ben-manes.caffeine", name = "caffeine", version.ref = "caffeine" }

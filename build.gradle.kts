@@ -69,9 +69,13 @@ sourceSets {
 dependencies {
     // Core dependencies
     api(libs.slf4j)
+    api(libs.tinylog)
     api(libs.jetbrainsAnnotations)
     api(libs.bundles.adventure)
     implementation(libs.minestomData)
+
+    // For terminal colors
+    implementation(libs.jansi)
 
     // Performance/data structures
     implementation(libs.caffeine)
