@@ -1,11 +1,11 @@
 package net.minestom.server.instance.generator;
 
+import net.minestom.server.coordinate.CoordConversion;
 import net.minestom.server.coordinate.Point;
 import net.minestom.server.coordinate.Vec;
 import net.minestom.server.instance.block.Block;
 import net.minestom.server.instance.generator.GeneratorImpl.GenSection;
 import net.minestom.server.utils.MathUtils;
-import net.minestom.server.utils.chunk.ChunkUtils;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -17,16 +17,16 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
+import static net.minestom.server.coordinate.CoordConversion.ceilSection;
+import static net.minestom.server.coordinate.CoordConversion.floorSection;
 import static net.minestom.server.instance.generator.GeneratorImpl.unit;
-import static net.minestom.server.utils.chunk.ChunkUtils.ceilSection;
-import static net.minestom.server.utils.chunk.ChunkUtils.floorSection;
 import static org.junit.jupiter.api.Assertions.*;
 
 public class GeneratorTest {
     @Test
     public void unitSize() {
-        assertDoesNotThrow(() -> dummyUnit(Vec.ZERO, new Vec(16)));
-        assertDoesNotThrow(() -> dummyUnit(new Vec(16), new Vec(32)));
+        assertDoesNotThrow(() -> dummyUnit(Vec.ZERO, Vec.SECTION));
+        assertDoesNotThrow(() -> dummyUnit(Vec.SECTION, new Vec(32)));
         assertThrows(IllegalArgumentException.class, () -> dummyUnit(new Vec(15), Vec.ZERO));
         assertThrows(IllegalArgumentException.class, () -> dummyUnit(new Vec(15), new Vec(32)));
         assertThrows(IllegalArgumentException.class, () -> dummyUnit(new Vec(15), new Vec(31)));
@@ -107,7 +107,7 @@ public class GeneratorTest {
         final int sectionY = -5;
         final int sectionZ = -2;
         GenerationUnit section = GeneratorImpl.section(null, new GenSection(), sectionX, sectionY, sectionZ);
-        assertEquals(new Vec(16), section.size());
+        assertEquals(Vec.SECTION, section.size());
         assertEquals(new Vec(sectionX * 16, sectionY * 16, sectionZ * 16), section.absoluteStart());
         assertEquals(new Vec(sectionX * 16 + 16, sectionY * 16 + 16, sectionZ * 16 + 16), section.absoluteEnd());
     }
@@ -126,7 +126,7 @@ public class GeneratorTest {
         assertEquals(sectionCount, subUnits.size());
         for (int i = 0; i < sectionCount; i++) {
             var subUnit = subUnits.get(i);
-            assertEquals(new Vec(16, 16, 16), subUnit.size());
+            assertEquals(Vec.SECTION, subUnit.size());
             assertEquals(new Vec(chunkX * 16, (i + minSection) * 16, chunkZ * 16), subUnit.absoluteStart());
             assertEquals(subUnit.absoluteStart().add(16), subUnit.absoluteEnd());
         }
@@ -168,8 +168,8 @@ public class GeneratorTest {
             Set<Point> points = new HashSet<>();
             modifier.setAll((x, y, z) -> {
                 assertTrue(points.add(new Vec(x, y, z)), "Duplicate point: " + x + ", " + y + ", " + z);
-                assertEquals(chunkX, ChunkUtils.getChunkCoordinate(x));
-                assertEquals(chunkZ, ChunkUtils.getChunkCoordinate(z));
+                assertEquals(chunkX, CoordConversion.globalToChunk(x));
+                assertEquals(chunkZ, CoordConversion.globalToChunk(z));
                 return Block.STONE;
             });
             assertEquals(16 * 16 * 16 * sectionCount, points.size());

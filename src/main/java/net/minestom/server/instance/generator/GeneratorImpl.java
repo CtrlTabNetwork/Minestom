@@ -18,12 +18,10 @@ import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 
-import static net.minestom.server.utils.chunk.ChunkUtils.*;
+import static net.minestom.server.coordinate.CoordConversion.*;
 
 @ApiStatus.Internal
 public final class GeneratorImpl {
-    private static final Vec SECTION_SIZE = new Vec(16);
-
     public record GenSection(Palette blocks, Palette biomes, Int2ObjectMap<Block> specials) {
         public GenSection(Palette blocks, Palette biomes) {
             this(blocks, biomes, new Int2ObjectOpenHashMap<>(0));
@@ -37,9 +35,9 @@ public final class GeneratorImpl {
     static GenerationUnit section(DynamicRegistry<Biome> biomeRegistry, GenSection section,
                                   int sectionX, int sectionY, int sectionZ,
                                   boolean fork) {
-        final Vec start = SECTION_SIZE.mul(sectionX, sectionY, sectionZ);
-        final Vec end = start.add(SECTION_SIZE);
-        final UnitModifier modifier = new SectionModifierImpl(biomeRegistry, SECTION_SIZE,
+        final Vec start = Vec.SECTION.mul(sectionX, sectionY, sectionZ);
+        final Vec end = start.add(Vec.SECTION);
+        final UnitModifier modifier = new SectionModifierImpl(biomeRegistry, Vec.SECTION,
                 start, end, section, fork);
         return unit(biomeRegistry, modifier, start, end, null);
     }
@@ -49,7 +47,7 @@ public final class GeneratorImpl {
     }
 
     public static UnitImpl chunk(DynamicRegistry<Biome> biomeRegistry, GenSection[] chunkSections, int chunkX, int minSection, int chunkZ) {
-        final Vec start = SECTION_SIZE.mul(chunkX, minSection, chunkZ);
+        final Vec start = Vec.SECTION.mul(chunkX, minSection, chunkZ);
         return area(biomeRegistry, start, 1, chunkSections.length, 1, chunkSections);
     }
 
@@ -72,7 +70,7 @@ public final class GeneratorImpl {
         }
         sections = List.copyOf(sections);
 
-        final Point size = SECTION_SIZE.mul(width, height, depth);
+        final Point size = Vec.SECTION.mul(width, height, depth);
         final Point end = start.add(size);
         final UnitModifier modifier = new AreaModifierImpl(size, start, end, width, height, depth, sections);
         return unit(biomeRegistry, modifier, start, end, sections);
@@ -107,19 +105,19 @@ public final class GeneratorImpl {
         public void setBlock(int x, int y, int z, @NotNull Block block) {
             resize(x, y, z);
             GenerationUnit section = findAbsolute(sections, minSection, width, height, depth, x, y, z);
-            assert section.absoluteStart().chunkX() == getChunkCoordinate(x) &&
-                    section.absoluteStart().section() == getChunkCoordinate(y) &&
-                    section.absoluteStart().chunkZ() == getChunkCoordinate(z) :
+            assert section.absoluteStart().chunkX() == globalToChunk(x) &&
+                    section.absoluteStart().section() == globalToChunk(y) &&
+                    section.absoluteStart().chunkZ() == globalToChunk(z) :
                     "Invalid section " + section.absoluteStart() + " for " + x + ", " + y + ", " + z;
             section.modifier().setBlock(x, y, z, block);
         }
 
         private void resize(int x, int y, int z) {
-            final int sectionX = getChunkCoordinate(x);
-            final int sectionY = getChunkCoordinate(y);
-            final int sectionZ = getChunkCoordinate(z);
+            final int sectionX = globalToChunk(x);
+            final int sectionY = globalToChunk(y);
+            final int sectionZ = globalToChunk(z);
             if (sections == null) {
-                this.minSection = SECTION_SIZE.mul(sectionX, sectionY, sectionZ);
+                this.minSection = Vec.SECTION.mul(sectionX, sectionY, sectionZ);
                 this.width = 1;
                 this.height = 1;
                 this.depth = 1;
@@ -133,17 +131,17 @@ public final class GeneratorImpl {
                 final Vec newMax = new Vec(Math.max(minSection.x() + width * 16, sectionX * 16 + 16),
                         Math.max(minSection.y() + height * 16, sectionY * 16 + 16),
                         Math.max(minSection.z() + depth * 16, sectionZ * 16 + 16));
-                final int newWidth = getChunkCoordinate(newMax.x() - newMin.x());
-                final int newHeight = getChunkCoordinate(newMax.y() - newMin.y());
-                final int newDepth = getChunkCoordinate(newMax.z() - newMin.z());
+                final int newWidth = globalToChunk(newMax.x() - newMin.x());
+                final int newHeight = globalToChunk(newMax.y() - newMin.y());
+                final int newDepth = globalToChunk(newMax.z() - newMin.z());
                 // Resize
                 GenerationUnit[] newSections = new GenerationUnit[newWidth * newHeight * newDepth];
                 // Copy old sections
                 for (GenerationUnit s : sections) {
                     final Point start = s.absoluteStart();
-                    final int newX = getChunkCoordinate(start.x() - newMin.x());
-                    final int newY = getChunkCoordinate(start.y() - newMin.y());
-                    final int newZ = getChunkCoordinate(start.z() - newMin.z());
+                    final int newX = globalToChunk(start.x() - newMin.x());
+                    final int newY = globalToChunk(start.y() - newMin.y());
+                    final int newZ = globalToChunk(start.z() - newMin.z());
                     final int index = findIndex(newWidth, newHeight, newDepth, newX, newY, newZ);
                     newSections[index] = s;
                 }
@@ -200,7 +198,7 @@ public final class GeneratorImpl {
                 }
             }
             final List<GenerationUnit> sections = List.of(units);
-            final Point startSection = SECTION_SIZE.mul(minSectionX, minSectionY, minSectionZ);
+            final Point startSection = Vec.SECTION.mul(minSectionX, minSectionY, minSectionZ);
             return registerFork(startSection, sections, width, height, depth);
         }
 
@@ -243,16 +241,16 @@ public final class GeneratorImpl {
             final int id = biomeRegistry.getId(biome);
             Check.argCondition(id == -1, "Biome has not been registered: {0}", biome);
             this.genSection.biomes.set(
-                    toSectionRelativeCoordinate(x) / 4,
-                    toSectionRelativeCoordinate(y) / 4,
-                    toSectionRelativeCoordinate(z) / 4, id);
+                    globalToSectionRelative(x) / 4,
+                    globalToSectionRelative(y) / 4,
+                    globalToSectionRelative(z) / 4, id);
         }
 
         @Override
         public void setBlock(int x, int y, int z, @NotNull Block block) {
-            final int localX = toSectionRelativeCoordinate(x);
-            final int localY = toSectionRelativeCoordinate(y);
-            final int localZ = toSectionRelativeCoordinate(z);
+            final int localX = globalToSectionRelative(x);
+            final int localY = globalToSectionRelative(y);
+            final int localZ = globalToSectionRelative(z);
             handleCache(localX, localY, localZ, block);
             this.genSection.blocks.set(localX, localY, localZ, retrieveBlockId(block));
         }
@@ -278,7 +276,7 @@ public final class GeneratorImpl {
                 for (int x = 0; x < 16; x++) {
                     for (int y = 0; y < 16; y++) {
                         for (int z = 0; z < 16; z++) {
-                            this.genSection.specials.put(getBlockIndex(x, y, z), block);
+                            this.genSection.specials.put(chunkBlockIndex(x, y, z), block);
                         }
                     }
                 }
@@ -301,9 +299,9 @@ public final class GeneratorImpl {
 
         private void handleCache(int x, int y, int z, Block block) {
             if (requireCache(block)) {
-                this.genSection.specials.put(getBlockIndex(x, y, z), block);
+                this.genSection.specials.put(chunkBlockIndex(x, y, z), block);
             } else if (!genSection.specials.isEmpty()) {
-                this.genSection.specials.remove(getBlockIndex(x, y, z));
+                this.genSection.specials.remove(chunkBlockIndex(x, y, z));
             }
         }
 
@@ -337,9 +335,9 @@ public final class GeneratorImpl {
                 throw new IllegalArgumentException("x, y and z must be in the chunk: " + x + ", " + y + ", " + z);
             }
             final GenerationUnit section = findRelativeSection(x, y, z);
-            x = toSectionRelativeCoordinate(x);
-            y = toSectionRelativeCoordinate(y);
-            z = toSectionRelativeCoordinate(z);
+            x = globalToSectionRelative(x);
+            y = globalToSectionRelative(y);
+            z = globalToSectionRelative(z);
             section.modifier().setBlock(x, y, z, block);
         }
 
@@ -431,11 +429,7 @@ public final class GeneratorImpl {
         }
 
         private GenerationUnit findRelativeSection(int x, int y, int z) {
-            final int sectionX = getChunkCoordinate(x);
-            final int sectionY = getChunkCoordinate(y);
-            final int sectionZ = getChunkCoordinate(z);
-            final int index = sectionZ + sectionY * depth + sectionX * depth * height;
-            return sections.get(index);
+            return findAbsolute(sections, Vec.ZERO, width, height, depth, x, y, z);
         }
 
         private void checkBorder(int x, int y, int z) {
@@ -525,9 +519,9 @@ public final class GeneratorImpl {
     private static GenerationUnit findAbsolute(List<GenerationUnit> units, Point start,
                                                int width, int height, int depth,
                                                int x, int y, int z) {
-        final int sectionX = getChunkCoordinate(x - start.x());
-        final int sectionY = getChunkCoordinate(y - start.y());
-        final int sectionZ = getChunkCoordinate(z - start.z());
+        final int sectionX = globalToChunk(x - start.x());
+        final int sectionY = globalToChunk(y - start.y());
+        final int sectionZ = globalToChunk(z - start.z());
         final int index = findIndex(width, height, depth, sectionX, sectionY, sectionZ);
         return units.get(index);
     }
