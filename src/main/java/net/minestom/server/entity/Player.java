@@ -191,7 +191,7 @@ public class Player extends LivingEntity implements CommandSender, HoverEventSou
 
     // Game state (https://minecraft.wiki/w/Minecraft_Wiki:Projects/wiki.vg_merge/Protocol#Game_Event)
     private boolean enableRespawnScreen;
-    private final ChunkUpdateLimitChecker chunkUpdateLimitChecker = new ChunkUpdateLimitChecker(6);
+    private final ChunkUpdateLimitChecker chunkUpdateLimitChecker = new ChunkUpdateLimitChecker(ServerFlag.PLAYER_CHUNK_UPDATE_LIMITER_HISTORY_SIZE);
 
     // Experience orb pickup
     protected Cooldown experiencePickupCooldown = new Cooldown(Duration.of(10, TimeUnit.SERVER_TICK));
@@ -414,7 +414,7 @@ public class Player extends LivingEntity implements CommandSender, HoverEventSou
 
                 // Reset server state
                 final boolean isOffHand = itemUseHand == PlayerHand.OFF;
-                refreshActiveHand(false, isOffHand, false);
+                refreshActiveHand(false, isOffHand, finishUseEvent.isRiptideSpinAttack());
                 clearItemUse();
 
                 // The client has predicted that the itemstack will have its count reduced, if the server
@@ -860,7 +860,15 @@ public class Player extends LivingEntity implements CommandSender, HoverEventSou
         var iter = bb.getBlocks(getPosition());
         while (iter.hasNext()) {
             var pos = iter.next();
-            var block = instance.getBlock(pos.blockX(), pos.blockY(), pos.blockZ(), Block.Getter.Condition.TYPE);
+            Block block;
+            try {
+                block = instance.getBlock(pos.blockX(), pos.blockY(), pos.blockZ(), Block.Getter.Condition.TYPE);
+            } catch (NullPointerException ignored) {
+                block = null;
+            }
+
+            // Block was in unloaded chunk, no bounding box.
+            if (block == null) continue;
 
             // For now just ignore scaffolding. It seems to have a dynamic bounding box, or is just parsed
             // incorrectly in MinestomDataGenerator.
