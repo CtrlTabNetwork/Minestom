@@ -11,6 +11,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Comparator;
+import java.util.Map;
 
 /**
  * <p>Holds registry data for any of the registries controlled by the server. Entries in registries should be referenced
@@ -21,7 +22,6 @@ import java.util.Comparator;
  * {@link net.minestom.server.ServerProcess}, or from {@link net.minestom.server.MinecraftServer} static methods.</p>
  *
  * @param <T> The type of the registry entries
- *
  * @see Registries
  */
 public sealed interface DynamicRegistry<T> extends Registry<T> permits DynamicRegistryImpl {
@@ -49,6 +49,14 @@ public sealed interface DynamicRegistry<T> extends Registry<T> permits DynamicRe
         default @NotNull String name() {
             return key().asString();
         }
+    }
+
+    @SafeVarargs
+    static <T> @NotNull DynamicRegistry<T> fromMap(@NotNull String id, @NotNull Map.Entry<net.kyori.adventure.key.Key, T>... entries) {
+        var registry = new DynamicRegistryImpl<T>(id, null);
+        for (var entry : entries)
+            registry.register(entry.getKey(), entry.getValue(), null);
+        return registry;
     }
 
     @ApiStatus.Internal
@@ -151,7 +159,7 @@ public sealed interface DynamicRegistry<T> extends Registry<T> permits DynamicRe
      * <p>Returns a {@link SendablePacket} potentially excluding vanilla entries if possible. It is never possible to
      * exclude vanilla entries if one has been overridden (e.g. via {@link #register(net.kyori.adventure.key.Key, T)}.</p>
      *
-     * @param registries Registries provider
+     * @param registries     Registries provider
      * @param excludeVanilla Whether to exclude vanilla entries
      * @return A {@link SendablePacket} containing the registry data
      */

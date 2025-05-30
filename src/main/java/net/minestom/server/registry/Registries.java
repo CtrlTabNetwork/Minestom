@@ -1,6 +1,7 @@
 package net.minestom.server.registry;
 
 import net.minestom.server.codec.StructCodec;
+import net.minestom.server.dialog.Dialog;
 import net.minestom.server.entity.damage.DamageType;
 import net.minestom.server.entity.metadata.animal.ChickenVariant;
 import net.minestom.server.entity.metadata.animal.CowVariant;
@@ -65,6 +66,8 @@ public interface Registries {
 
     @NotNull DynamicRegistry<PigVariant> pigVariant();
 
+    @NotNull DynamicRegistry<Dialog> dialog();
+
     // The following are _not_ sent to the client.
 
     @NotNull DynamicRegistry<StructCodec<? extends LevelBasedValue>> enchantmentLevelBasedValues();
@@ -77,7 +80,7 @@ public interface Registries {
 
     @FunctionalInterface
     interface Selector<T> {
-        @NotNull DynamicRegistry<T> select(@NotNull Registries registries);
+        @NotNull Registry<T> select(@NotNull Registries registries);
     }
 
 }

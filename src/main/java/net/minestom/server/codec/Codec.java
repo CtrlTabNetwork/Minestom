@@ -8,6 +8,7 @@ import net.minestom.server.codec.CodecImpl.PrimitiveImpl;
 import net.minestom.server.coordinate.Point;
 import net.minestom.server.registry.DynamicRegistry;
 import net.minestom.server.registry.Registries;
+import net.minestom.server.registry.Registry;
 import net.minestom.server.utils.ThrowingFunction;
 import net.minestom.server.utils.UUIDUtils;
 import net.minestom.server.utils.Unit;
@@ -105,6 +106,14 @@ public interface Codec<T> extends Encoder<T>, Decoder<T> {
     }
 
     static <T> @NotNull StructCodec<T> RegistryTaggedUnion(
+            @NotNull Registry<StructCodec<? extends T>> registry,
+            @NotNull Function<T, StructCodec<? extends T>> serializerGetter,
+            @NotNull String key
+    ) {
+        return Codec.RegistryTaggedUnion((ignored) -> registry, serializerGetter, key);
+    }
+
+    static <T> @NotNull StructCodec<T> RegistryTaggedUnion(
             @NotNull Registries.Selector<StructCodec<? extends T>> registrySelector,
             @NotNull Function<T, StructCodec<? extends T>> serializerGetter,
             @NotNull String key
@@ -135,6 +144,10 @@ public interface Codec<T> extends Encoder<T>, Decoder<T> {
     default @NotNull Codec<List<T>> listOrSingle(int maxSize) {
         return Codec.this.list(maxSize).orElse(Codec.this.transform(
                 List::of, list -> list.isEmpty() ? null : list.getFirst()));
+    }
+
+    default @NotNull Codec<List<T>> listOrSingle() {
+        return this.listOrSingle(Integer.MAX_VALUE);
     }
 
     default @NotNull Codec<Set<T>> set(int maxSize) {
