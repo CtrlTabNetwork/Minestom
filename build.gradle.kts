@@ -28,6 +28,10 @@ allprojects {
     repositories {
         mavenCentral()
         mavenLocal()
+
+        maven {
+            url = uri("https://repo.mrtecno.dev/repository/public-maven/")
+        }
     }
 
     configurations.all {
@@ -160,12 +164,12 @@ tasks {
         pom {
             name.set(this@create.artifactId)
             description.set(shortDescription)
-            url.set("https://github.com/ctrltabnewtork/minestom")
+            url.set("https://github.com/ctrltabnetwork/minestom")
 
             licenses {
                 license {
                     name.set("Apache 2.0")
-                    url.set("https://github.com/minestom/minestom/blob/main/LICENSE")
+                    url.set("https://github.com/ctrltabnetwork/minestom/blob/main/LICENSE")
                 }
             }
 
@@ -186,15 +190,15 @@ tasks {
             }
 
             scm {
-                connection.set("scm:git:git://github.com/minestom/minestom.git")
-                developerConnection.set("scm:git:git@github.com:minestom/minestom.git")
-                url.set("https://github.com/minestom/minestom")
+                connection.set("scm:git:git://github.com/ctrltabnetwork/minestom.git")
+                developerConnection.set("scm:git:git@github.com:ctrltabnetwork/minestom.git")
+                url.set("https://github.com/ctrltabnetwork/minestom")
                 tag.set("HEAD")
             }
 
             ciManagement {
                 system.set("Github Actions")
-                url.set("https://github.com/minestom/minestom/actions")
+                url.set("https://github.com/ctrltabnetwork/minestom/actions")
             }
         }
     }
