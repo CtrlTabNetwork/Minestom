@@ -1,4 +1,4 @@
-rootProject.name = "minestom"
+rootProject.name = "minestom-t"
 
 include("testing")
 include("code-generators")

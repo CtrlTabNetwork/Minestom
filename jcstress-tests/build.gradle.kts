@@ -5,6 +5,7 @@ plugins {
 dependencies {
     jcstressImplementation(rootProject)
     jcstress(libs.jcstress.core)
+    jcstress(libs.hephaistos)
 }
 
 jcstress {

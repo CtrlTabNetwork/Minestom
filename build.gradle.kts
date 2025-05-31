@@ -7,6 +7,8 @@ plugins {
     `maven-publish`
     signing
     alias(libs.plugins.nexuspublish)
+
+    alias(libs.plugins.settings)
 }
 
 // Read env vars (used for publishing generally)
@@ -84,9 +86,13 @@ sourceSets {
 dependencies {
     // Core dependencies
     api(libs.slf4j)
+    api(libs.tinylog)
     api(libs.jetbrainsAnnotations)
     api(libs.bundles.adventure)
     implementation(libs.minestomData)
+
+    // For terminal colors
+    implementation(libs.jansi)
 
     // Performance/data structures
     api(libs.fastutil)
@@ -138,8 +144,13 @@ tasks {
         }
     }
 
+    publishing.repositories.maven {
+        name = "tecno-repo"
+        url = uri("https://repo.mrtecno.dev/repository/personal-hosted/")
+    }
+
     publishing.publications.create<MavenPublication>("maven") {
-        groupId = "net.minestom"
+        groupId = "net.minestom-t"
         // todo: decide on publishing scheme
         artifactId = if (channel == "snapshot") "minestom-snapshots" else "minestom-snapshots"
         version = project.version.toString()
@@ -149,7 +160,7 @@ tasks {
         pom {
             name.set(this@create.artifactId)
             description.set(shortDescription)
-            url.set("https://github.com/minestom/minestom")
+            url.set("https://github.com/ctrltabnewtork/minestom")
 
             licenses {
                 license {

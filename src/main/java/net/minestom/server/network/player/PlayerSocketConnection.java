@@ -337,7 +337,10 @@ public class PlayerSocketConnection extends PlayerConnection {
                 if (serverPacket != null) { // Events are not called for buffered packets
                     PlayerPacketOutEvent event = new PlayerPacketOutEvent(player, serverPacket);
                     outgoing.call(event);
+
                     if (event.isCancelled()) return true;
+                    if (event.getPacket() != serverPacket)
+                        packet = SendablePacket.rewrapServerPacket(packet, event.getPacket());
                 }
             }
             // Translation
