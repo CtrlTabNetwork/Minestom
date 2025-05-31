@@ -28,6 +28,10 @@ allprojects {
     repositories {
         mavenLocal()
         mavenCentral()
+
+        maven {
+            url = uri("https://repo.mrtecno.dev/repository/public-maven/")
+        }
     }
 
     configurations.all {
